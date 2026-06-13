@@ -397,3 +397,7 @@ risk_categories.0
 2026-06-13 16:15:46,844 INFO [orchestrator] [RSR-20260613-006] final_report.json written
 2026-06-13 16:15:46,846 INFO [orchestrator] [RSR-20260613-006] status=complete stage=rule_engine
 2026-06-13 16:21:33,352 INFO [main] API starting agent_version=0.1.0-hackathon log_level=INFO llm_provider=tokenrouter
+2026-06-13 17:34:49,017 INFO [main] API shutdown
+2026-06-13 17:37:45,743 INFO [orchestrator] [DEMO-ORION-001] final_report.json written
+2026-06-13 17:37:45,753 INFO [orchestrator] [DEMO-ORION-001] status=complete stage=rule_engine
+2026-06-13 17:37:45,771 INFO [orchestrator] [DEMO-AMBIG-001] status=clarification_required stage=entity_resolution

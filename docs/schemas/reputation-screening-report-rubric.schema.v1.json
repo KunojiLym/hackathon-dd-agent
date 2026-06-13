@@ -231,6 +231,9 @@
         "disposition_rationale": {
           "type": "string"
         },
+        "memo": {
+          "type": "string"
+        },
         "determination_basis": {
           "type": "object",
           "additionalProperties": false,

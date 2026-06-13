@@ -5,10 +5,6 @@ from pathlib import Path
 from typing import Any
 
 
-def _risk_score(level: str) -> int:
-    return {"low": 22, "medium": 55, "high": 78, "critical": 92}.get(level or "medium", 50)
-
-
 def _risk_category(level: str) -> str:
     return {
         "low": "Low Risk",
@@ -16,6 +12,15 @@ def _risk_category(level: str) -> str:
         "high": "High Risk",
         "critical": "Critical Risk",
     }.get(level or "medium", "Medium Risk")
+
+
+def _coverage_confidence(coverage: str | None) -> tuple[str, int]:
+    mapping = {
+        "broad": ("Broad", 90),
+        "moderate": ("Moderate", 70),
+        "limited": ("Limited", 45),
+    }
+    return mapping.get(coverage or "moderate", ("Moderate", 70))
 
 
 def _entity_match_summary(evidence: list[dict]) -> dict[str, Any]:
@@ -41,6 +46,15 @@ def _support_band_value(item: dict) -> str:
     return str(band)
 
 
+def _fallback_memo(assessment: dict, subject_raw: dict) -> str:
+    return (
+        f"Subject: {subject_raw.get('primary_name', '')}\n\n"
+        f"{assessment.get('overall_summary', '')}\n\n"
+        f"Disposition: {assessment.get('recommended_disposition', '').replace('_', ' ').title()}\n"
+        f"{assessment.get('disposition_rationale', '')}"
+    )
+
+
 def v1_report_to_ui(report: dict) -> dict:
     """Convert backend ReputationScreeningReport JSON to UI mock shape."""
     assessment = report.get("assessment", {})
@@ -51,10 +65,26 @@ def v1_report_to_ui(report: dict) -> dict:
     checklist = report.get("analyst_checklist", [])
 
     level = assessment.get("overall_risk_level", "medium")
+    determination = assessment.get("determination_basis", {}) or {}
+    support_summary = determination.get("support_summary", {}) or {}
+    triggered_rules = determination.get("triggered_rules", []) or []
+
+    high = support_summary.get("high_support_evidence_count", 0)
+    medium = support_summary.get("medium_support_evidence_count", 0)
+    low = support_summary.get("low_support_evidence_count", 0)
+    support_line = f"{high} high / {medium} med / {low} low"
+    top_rule = triggered_rules[0] if triggered_rules else "No rules triggered"
+
+    coverage_label, confidence_score = _coverage_confidence(
+        assessment.get("coverage_assessment")
+    )
+
     risk_summary = {
-        "overallRiskScore": _risk_score(level),
         "riskCategory": _risk_category(level),
-        "confidenceScore": min(95, 55 + len(evidence) * 2),
+        "supportSummaryLine": support_line,
+        "topTriggeredRule": top_rule,
+        "confidenceLabel": coverage_label,
+        "confidenceScore": confidence_score,
         "recommendation": assessment.get("recommended_disposition", "").replace("_", " ").title(),
         "summary": assessment.get("overall_summary", ""),
     }
@@ -114,12 +144,7 @@ def v1_report_to_ui(report: dict) -> dict:
                     }
                 )
 
-    memo_body = (
-        f"Subject: {subject_raw.get('primary_name', '')}\n\n"
-        f"{assessment.get('overall_summary', '')}\n\n"
-        f"Disposition: {assessment.get('recommended_disposition', '').replace('_', ' ').title()}\n"
-        f"{assessment.get('disposition_rationale', '')}"
-    )
+    memo_body = assessment.get("memo") or _fallback_memo(assessment, subject_raw)
 
     recommended_steps = [
         {

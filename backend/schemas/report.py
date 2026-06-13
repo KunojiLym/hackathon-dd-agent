@@ -104,6 +104,7 @@ class Assessment(BaseModel):
     recommended_disposition: RecommendedDisposition
     disposition_rationale: str = ""
     determination_basis: DeterminationBasis
+    memo: Optional[str] = None
 
 
 class RiskFlag(BaseModel):

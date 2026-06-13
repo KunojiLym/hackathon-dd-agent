@@ -128,6 +128,25 @@ def run_or_load(stage_name: str, run_id: str, fn) -> dict:
     return result
 
 
+def invalidate_downstream_checkpoints(run_id: str) -> None:
+    """Remove stage 2–5 checkpoints and final report so resume re-runs with clarified context."""
+    run_dir = get_run_dir(run_id)
+    for stage in (
+        "data_collection",
+        "sandbox_processing",
+        "llm_reasoning",
+        "rule_engine",
+    ):
+        path = run_dir / STAGE_FILES[stage]
+        if path.exists():
+            path.unlink()
+            logger.info("[%s] invalidated checkpoint %s", run_id, STAGE_FILES[stage])
+    final_report = run_dir / "final_report.json"
+    if final_report.exists():
+        final_report.unlink()
+        logger.info("[%s] invalidated final_report.json", run_id)
+
+
 def _run_stages_2_to_5(run_id: str, checkpoint: dict) -> None:
     save_run_status(run_id, "running", stage="data_collection")
 
@@ -241,6 +260,7 @@ def resume_pipeline(run_id: str, clarification: ClarificationRequest | dict) -> 
         cp1b = run_stage1b(cp1_augmented, clar)
         _atomic_write_json(cp1b_path, cp1b)
 
+        invalidate_downstream_checkpoints(run_id)
         _run_stages_2_to_5(run_id, cp1b)
         logger.info("[%s] pipeline complete after clarification", run_id)
     except Exception as e:

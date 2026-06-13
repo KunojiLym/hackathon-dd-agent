@@ -22,12 +22,12 @@ from schemas.report import ScreenRequest
 from schemas.resolution import ClarificationRequest
 from stages.llm_client import llm_configured
 
+configure_logging()
 logger = get_logger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    configure_logging()
     settings = get_settings()
     logger.info(
         "API starting agent_version=%s log_level=%s llm_provider=%s",

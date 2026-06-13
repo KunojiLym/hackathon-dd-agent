@@ -1,15 +1,16 @@
 import html
 import json
+import time
 from pathlib import Path
 
 import pandas as pd
 import streamlit as st
 
 from api_client import (
-    ClarificationRequired,
     build_screen_request,
-    poll_until_complete,
+    get_screen_status,
     start_screening,
+    submit_clarification,
 )
 from report_adapter import load_report_from_path, normalize_ui_data
 from settings import get_frontend_settings
@@ -46,8 +47,58 @@ def _format_disposition(value: str | None) -> str:
         return ""
     return value.replace("_", " ").title()
 
+
+def _truncate_caption(text: str, max_len: int = 72) -> str:
+    if len(text) <= max_len:
+        return text
+    return text[: max_len - 3] + "..."
+
+
 if "ui_data" not in st.session_state:
     st.session_state.ui_data = load_report_from_path(DEFAULT_DATA_PATH)
+if "polling" not in st.session_state:
+    st.session_state.polling = False
+if "clarification_pending" not in st.session_state:
+    st.session_state.clarification_pending = None
+if "active_run_id" not in st.session_state:
+    st.session_state.active_run_id = None
+
+# Non-blocking status poll (one GET per rerun; UI stays responsive with stage updates)
+if st.session_state.polling and not SETTINGS["use_mock_data"]:
+    run_id = st.session_state.active_run_id
+    deadline = st.session_state.get("poll_deadline", 0)
+    if not run_id:
+        st.session_state.polling = False
+    elif time.time() > deadline:
+        st.session_state.polling = False
+        st.error(f"Screening run {run_id} timed out after {SETTINGS['poll_timeout_seconds']}s.")
+    else:
+        try:
+            status = get_screen_status(SETTINGS["backend_url"], run_id)
+            state = status.get("status")
+            if state == "complete":
+                report = status.get("report")
+                if not report:
+                    raise RuntimeError("Backend returned complete status without a report payload")
+                st.session_state.ui_data = normalize_ui_data(report)
+                st.session_state.polling = False
+                st.session_state.last_success = f"Screening complete ({run_id})."
+                st.rerun()
+            elif state == "error":
+                st.session_state.polling = False
+                st.error(status.get("error") or "Pipeline failed")
+            elif state == "clarification_required":
+                st.session_state.polling = False
+                st.session_state.clarification_pending = status
+                st.rerun()
+            else:
+                stage = status.get("stage") or "running"
+                st.info(f"Run {run_id}: {state} — stage: {stage}")
+                time.sleep(SETTINGS["poll_interval_seconds"])
+                st.rerun()
+        except Exception as exc:
+            st.session_state.polling = False
+            st.error(f"Polling failed: {exc}")
 
 data = st.session_state.ui_data
 subject = data["subject"]
@@ -626,14 +677,41 @@ st.markdown("""
         cursor: pointer !important;
     }
 
+    .mock-mode-banner {
+        background: #fef3c7;
+        border: 1px solid #f59e0b;
+        color: #92400e;
+        padding: 8px 12px;
+        border-radius: 8px;
+        margin-bottom: 8px;
+        font-size: 12px;
+        font-weight: 700;
+    }
+
+    .mock-mode-badge {
+        background: #f59e0b;
+        color: #111827;
+        padding: 4px 8px;
+        border-radius: 6px;
+        font-size: 10px;
+        font-weight: 800;
+        display: inline-block;
+        margin-bottom: 8px;
+    }
+
 </style>
 """, unsafe_allow_html=True)
 
 # Sidebar
+mock_sidebar_note = (
+    '<div class="mock-mode-badge">MOCK MODE</div><br>'
+    if SETTINGS["use_mock_data"]
+    else ""
+)
 st.sidebar.markdown("""
 <div class="sidebar-logo">Risk Assistant</div>
 <div class="sidebar-subtitle">Evidence-Based Compliance Agent</div>
-
+""" + mock_sidebar_note + """
 <div class="sidebar-divider"></div>
 
 <div class="sidebar-item sidebar-item-active">🏠 Dashboard</div>
@@ -652,6 +730,12 @@ st.sidebar.markdown("""
     <span style="color:#b8c7e0 !important;">Evidence → Rules → Memo</span>
 </div>
 """, unsafe_allow_html=True)
+
+if SETTINGS["use_mock_data"]:
+    st.markdown(
+        '<div class="mock-mode-banner">Mock Mode Active — Run reloads local sample data; no live API call.</div>',
+        unsafe_allow_html=True,
+    )
 
 # Header
 st.markdown("""
@@ -703,37 +787,72 @@ if run_screening:
         st.error("Subject name is required.")
     else:
         try:
-            with st.spinner("Running screening pipeline..."):
-                notes_parts = []
-                if purpose:
-                    notes_parts.append(f"Purpose: {purpose}")
-                if role.strip():
-                    notes_parts.append(f"Role: {role.strip()}")
-                payload = build_screen_request(
-                    subject_name,
-                    subject_type,
-                    country,
-                    input_notes="; ".join(notes_parts) if notes_parts else None,
-                )
-                run_id = start_screening(SETTINGS["backend_url"], payload)
-                result = poll_until_complete(
-                    SETTINGS["backend_url"],
-                    run_id,
-                    poll_interval=SETTINGS["poll_interval_seconds"],
-                    timeout=SETTINGS["poll_timeout_seconds"],
-                )
-                report = result.get("report")
-                if not report:
-                    raise RuntimeError("Backend returned complete status without a report payload")
-                st.session_state.ui_data = normalize_ui_data(report)
-                st.session_state.last_run_id = run_id
-                st.session_state.last_success = f"Screening complete ({run_id})."
+            notes_parts = []
+            if purpose:
+                notes_parts.append(f"Purpose: {purpose}")
+            if role.strip():
+                notes_parts.append(f"Role: {role.strip()}")
+            payload = build_screen_request(
+                subject_name,
+                subject_type,
+                country,
+                input_notes="; ".join(notes_parts) if notes_parts else None,
+            )
+            run_id = start_screening(SETTINGS["backend_url"], payload)
+            st.session_state.active_run_id = run_id
+            st.session_state.polling = True
+            st.session_state.poll_deadline = time.time() + SETTINGS["poll_timeout_seconds"]
+            st.session_state.clarification_pending = None
             st.rerun()
-        except ClarificationRequired as exc:
-            st.session_state.clarification = exc.payload
-            st.warning(f"Run {exc.run_id} requires analyst clarification. Use POST /screen/{exc.run_id}/clarify.")
         except Exception as exc:
             st.error(f"Screening failed: {exc}")
+
+if st.session_state.get("clarification_pending"):
+    clar_payload = st.session_state.clarification_pending
+    clar_run_id = clar_payload.get("run_id") or st.session_state.active_run_id
+    clar_form = clar_payload.get("clarification_form") or {}
+    candidates = clar_form.get("candidate_entities") or []
+
+    st.warning("Entity identity is ambiguous. Provide clarification to continue screening.")
+
+    with st.form("clarification_form"):
+        clar_country = st.text_input("Country", value=country or "")
+        clar_industry = st.text_input("Industry", value="")
+        candidate_labels = [
+            f"{c.get('name', 'Candidate')} ({c.get('country', 'unknown')}) — {c.get('why_shown', '')}"
+            for c in candidates
+        ]
+        candidate_map = {label: c for label, c in zip(candidate_labels, candidates)}
+        selected_candidate = (
+            st.selectbox("Candidate entity (optional)", ["None"] + candidate_labels)
+            if candidate_labels
+            else None
+        )
+        clar_notes = st.text_area("Analyst notes", placeholder="Optional context for the screening...")
+        submitted = st.form_submit_button("Submit clarification and resume")
+
+    if submitted and clar_run_id:
+        try:
+            body: dict = {}
+            if clar_country.strip():
+                body["country"] = clar_country.strip()
+            if clar_industry.strip():
+                body["industry"] = clar_industry.strip()
+            if clar_notes.strip():
+                body["notes"] = clar_notes.strip()
+            if selected_candidate and selected_candidate != "None":
+                cand = candidate_map.get(selected_candidate)
+                if cand and cand.get("candidate_id"):
+                    body["candidate_id"] = cand["candidate_id"]
+            submit_clarification(SETTINGS["backend_url"], clar_run_id, body)
+            st.session_state.clarification_pending = None
+            st.session_state.active_run_id = clar_run_id
+            st.session_state.polling = True
+            st.session_state.poll_deadline = time.time() + SETTINGS["poll_timeout_seconds"]
+            st.session_state.last_success = f"Clarification submitted for {clar_run_id}; resuming pipeline..."
+            st.rerun()
+        except Exception as exc:
+            st.error(f"Clarification failed: {exc}")
 
 if st.session_state.get("last_success"):
     st.success(st.session_state.last_success)
@@ -752,12 +871,21 @@ with m1:
     """, unsafe_allow_html=True)
 
 with m2:
+    support_line = risk.get(
+        "supportSummaryLine",
+        f"{support_summary.get('high_support_evidence_count', 0)} high / "
+        f"{support_summary.get('medium_support_evidence_count', 0)} med / "
+        f"{support_summary.get('low_support_evidence_count', 0)} low",
+    )
+    top_rule = risk.get(
+        "topTriggeredRule",
+        triggered_rules[0] if triggered_rules else "No rules triggered",
+    )
     st.markdown(f"""
     <div class="metric-card">
-        <div class="metric-label">Risk Score</div>
-        <span class="metric-value-red">{risk.get("overallRiskScore", 0)}</span>
-        <span style="font-size:13px;color:#6b7280;"> /100</span>
-        <div class="metric-caption">Rule-based</div>
+        <div class="metric-label">Evidence Support</div>
+        <div class="metric-value-red">{support_line}</div>
+        <div class="metric-caption">{_truncate_caption(top_rule)}</div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -775,7 +903,7 @@ with m4:
     <div class="metric-card">
         <div class="metric-label">Coverage</div>
         <div class="metric-value-blue">{assessment.get("coverage_assessment", "moderate").title()}</div>
-        <div class="metric-caption">{risk.get("confidenceScore", 0)}% confidence</div>
+        <div class="metric-caption">{risk.get("confidenceLabel", "Moderate")} coverage</div>
     </div>
     """, unsafe_allow_html=True)
 

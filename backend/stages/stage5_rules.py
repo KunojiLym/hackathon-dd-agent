@@ -226,6 +226,58 @@ def _build_disposition_rationale(disposition: str) -> str:
     return mapping.get(disposition, "Disposition determined by rule-based assessment.")
 
 
+def _build_memo(
+    subject: Subject,
+    overall_summary: str,
+    disposition: str,
+    disposition_rationale: str,
+    support_summary: dict,
+    triggered_rules: list[str],
+    risk_flags: list[RiskFlag],
+) -> str:
+    """Deterministic compliance memo assembled from rule-engine outputs."""
+    lines = [
+        f"Subject: {subject.primary_name}",
+        f"Type: {subject.subject_type.value}",
+    ]
+    if subject.country:
+        lines.append(f"Country: {subject.country}")
+    if subject.industry:
+        lines.append(f"Industry: {subject.industry}")
+    lines.extend(["", "Executive Summary", overall_summary, ""])
+    lines.append(f"Recommended Disposition: {disposition.replace('_', ' ').title()}")
+    lines.append(disposition_rationale)
+    lines.extend(
+        [
+            "",
+            "Support Summary",
+            (
+                f"High-support evidence: {support_summary.get('high_support_evidence_count', 0)}; "
+                f"Medium-support: {support_summary.get('medium_support_evidence_count', 0)}; "
+                f"Low-support: {support_summary.get('low_support_evidence_count', 0)}; "
+                f"Material categories: {support_summary.get('material_category_count', 0)}; "
+                f"Tier-1 hits: {support_summary.get('official_or_tier_1_hits', 0)}."
+            ),
+        ]
+    )
+    if triggered_rules:
+        lines.extend(["", "Triggered Rules"])
+        for rule in triggered_rules[:8]:
+            lines.append(f"- {rule}")
+    if risk_flags:
+        lines.extend(["", "Key Risk Flags"])
+        for flag in risk_flags[:5]:
+            lines.append(f"- [{flag.severity.value}] {flag.title}: {flag.description[:240]}")
+    lines.extend(
+        [
+            "",
+            "This memo was generated deterministically from open-web screening results. "
+            "Human compliance review is required before any onboarding decision.",
+        ]
+    )
+    return "\n".join(lines)
+
+
 def _build_risk_flags(
     evidence: list[EvidenceItem],
     support_bands: dict[str, str],
@@ -436,6 +488,21 @@ def assemble_report(checkpoint4: dict) -> ReputationScreeningReport:
         flagged,
     )
 
+    risk_flags = _build_risk_flags(evidence, support_bands)
+    analyst_checklist = _build_analyst_checklist(case_result["recommended_disposition"])
+
+    support_summary_dict = case_result["determination_basis"]["support_summary"]
+    triggered_rules_list = case_result["determination_basis"]["triggered_rules"]
+    memo_text = _build_memo(
+        subject,
+        overall_summary,
+        case_result["recommended_disposition"],
+        _build_disposition_rationale(case_result["recommended_disposition"]),
+        support_summary_dict,
+        triggered_rules_list,
+        risk_flags,
+    )
+
     assessment = Assessment(
         overall_risk_level=OverallRiskLevel(case_result["overall_risk_level"]),
         overall_summary=overall_summary,
@@ -445,13 +512,11 @@ def assemble_report(checkpoint4: dict) -> ReputationScreeningReport:
         disposition_rationale=_build_disposition_rationale(case_result["recommended_disposition"]),
         determination_basis=DeterminationBasis(
             method=DeterminationMethod.rule_based_v1,
-            support_summary=SupportSummary(**case_result["determination_basis"]["support_summary"]),
-            triggered_rules=case_result["determination_basis"]["triggered_rules"],
+            support_summary=SupportSummary(**support_summary_dict),
+            triggered_rules=triggered_rules_list,
         ),
+        memo=memo_text,
     )
-
-    risk_flags = _build_risk_flags(evidence, support_bands)
-    analyst_checklist = _build_analyst_checklist(case_result["recommended_disposition"])
 
     processing_notes = [
         f"Pipeline run {run_id} completed via rule_based_v1.",
