@@ -2,7 +2,7 @@
 
 | Document | Description |
 |----------|-------------|
-| [architecture.md](architecture.md) | Backend pipeline stages, checkpoints, API, reliability patterns |
+| [architecture.md](architecture.md) | Backend pipeline stages, checkpoints, API, secrets, Daytona deployment |
 | [integration.md](integration.md) | Running frontend + backend together, API contract, report mapping |
 | [../backend/README.md](../backend/README.md) | API quick start, env vars, demo seeds, logging |
 | [../frontend/README.md](../frontend/README.md) | Streamlit UI setup and modules |

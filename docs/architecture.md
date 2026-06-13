@@ -607,6 +607,7 @@ def compute_case_risk(
 
 | Endpoint | Description |
 |----------|-------------|
+| `GET /health` | Service health and configured integrations (secret presence, not values) |
 | `POST /screen` | Start run (minimal: `subject_type` + `primary_name`) |
 | `GET /screen/{run_id}` | Poll status; returns report when complete or clarification form when paused |
 | `POST /screen/{run_id}/clarify` | Submit clarification to resume a paused run (409 if not awaiting clarification) |
@@ -773,7 +774,26 @@ docs/
 
 ***
 
-## Environment Variables
+## Configuration and Secrets
+
+There are three layers to manage: your **local dev machine**, the **Daytona workspace** (where you code), and the **deployed sandbox** (where the demo app runs). Each needs a slightly different approach.
+
+### Layer 1 — Local dev (`.env` file + `pydantic-settings`)
+
+Keep a `.env` file that never gets committed (add it to `.gitignore`). Settings are loaded and validated at startup via `backend/config.py` using `pydantic-settings`. [fastapi.tiangolo](https://fastapi.tiangolo.com/advanced/settings/)
+
+```bash
+# .env  (never commit this)
+BRIGHT_DATA_API_KEY=...
+BRIGHT_DATA_SERP_ZONE=serp_api
+BRIGHT_DATA_BROWSER_USERNAME=...
+BRIGHT_DATA_BROWSER_PASSWORD=...
+DAYTONA_API_KEY=...
+LLM_PROVIDER=tokenrouter
+TOKENROUTER_API_KEY=...
+```
+
+Full variable list:
 
 ```bash
 # Bright Data (SERP + Browser API)
@@ -800,6 +820,98 @@ RUNS_DIR=./runs
 ```
 
 See `backend/.env.example` for the full list including OpenRouter and Kimi overrides.
+
+### Layer 2 — Daytona workspace (dev environment secrets)
+
+Use the `daytona env set` CLI to register secrets at the workspace level. These persist across workspace restarts and are injected as environment variables into every container and terminal session — no `.env` file needed in the workspace. [daytona](https://www.daytona.io/dotfiles/using-environmental-variables-in-daytona)
+
+```bash
+daytona env set BRIGHT_DATA_API_KEY=... DAYTONA_API_KEY=... TOKENROUTER_API_KEY=...
+
+# Verify
+daytona env list
+```
+
+This is cleaner than keeping a `.env` file in the workspace because the values are stored by Daytona's server, not on disk in your project directory. [daytona](https://www.daytona.io/dotfiles/using-environmental-variables-in-daytona)
+
+### Layer 3 — Deployed sandbox (injected at process launch)
+
+When you spin up the demo sandbox via the SDK, pass secrets as environment variables directly to `CreateSandboxParams`. This keeps them out of your source files entirely. [developers.openai](https://developers.openai.com/cookbook/examples/agents_sdk/computer_use_with_daytona/computer_use_with_daytona)
+
+```python
+import os
+from daytona_sdk import Daytona, CreateSandboxParams
+
+daytona = Daytona()
+
+sandbox = daytona.create(CreateSandboxParams(
+    language="python",
+    public=True,
+    env_vars={
+        "BRIGHT_DATA_API_KEY": os.environ["BRIGHT_DATA_API_KEY"],
+        "TOKENROUTER_API_KEY": os.environ["TOKENROUTER_API_KEY"],
+        "LLM_PROVIDER": "tokenrouter",
+        "RUNS_DIR": "/app/runs",
+        # Note: no DAYTONA_API_KEY here — the sandbox doesn't need to call back to Daytona
+    }
+))
+```
+
+The secrets come from your local env (set via `daytona env set` in Layer 2), so they are never hardcoded in the codebase. [developers.openai](https://developers.openai.com/cookbook/examples/agents_sdk/computer_use_with_daytona/computer_use_with_daytona)
+
+### Summary
+
+| Layer | Method | Why |
+|---|---|---|
+| Local dev | `.env` + `pydantic-settings` | Type-safe, validated at startup, standard FastAPI pattern |
+| Daytona workspace | `daytona env set` CLI | Persisted by Daytona server, not on disk |
+| Deployed demo sandbox | `env_vars` in `CreateSandboxParams` | Injected at creation from local env, never in source |
+| Shared with teammate | Share `.env` out-of-band (WhatsApp/Telegram DM) | Never commit or paste into chat/docs |
+
+After deploying, hit `GET /health` to confirm the sandbox booted with all secrets correctly injected. The endpoint returns presence flags only — never secret values.
+
+***
+
+## Deploying the FastAPI App in a Daytona Sandbox
+
+Daytona provides built-in preview URLs for any port inside a sandbox — no manual tunneling needed. Any HTTP process listening on ports 1–65535 is reachable via a generated URL in the format `https://{port}-{sandboxId}.{daytonaProxyDomain}`. [daytona](https://www.daytona.io/docs/en/preview/)
+
+**Setting `public: true`** on the sandbox makes that preview URL accessible to your teammate's frontend without any auth header. [daytona](https://www.daytona.io/docs/en/preview/)
+
+This is distinct from Stage 3 sandbox processing (short-lived sandboxes for text cleanup). For the hackathon demo, you can run the entire FastAPI backend inside a long-lived public sandbox so the frontend can call it directly.
+
+```python
+from daytona_sdk import Daytona, CreateSandboxParams
+
+daytona = Daytona()
+
+# Create a long-lived sandbox for the demo deployment
+sandbox = daytona.create(CreateSandboxParams(
+    language="python",
+    public=True         # preview URLs are unauthenticated — frontend can hit them directly
+))
+
+# Upload your backend files
+sandbox.fs.upload_file("main.py", open("backend/main.py", "rb").read())
+sandbox.fs.upload_file("requirements.txt", open("backend/requirements.txt", "rb").read())
+
+# Install dependencies
+sandbox.process.exec("pip install -r requirements.txt -q")
+
+# Start FastAPI with uvicorn on port 8000 (non-blocking)
+sandbox.process.exec(
+    "uvicorn main:app --host 0.0.0.0 --port 8000 &",
+    timeout=10
+)
+
+# Get the public URL for the frontend to call
+preview_url = sandbox.get_preview_link(8000)
+print(f"Backend URL: {preview_url}")
+```
+
+Point the frontend's `BACKEND_URL` at `preview_url`. No CORS proxy, no ngrok, no extra infra. [daytona](https://www.daytona.io/docs/en/preview/)
+
+When injecting secrets for the deployed sandbox, combine this pattern with Layer 3 above — pass `env_vars` in `CreateSandboxParams` rather than uploading a `.env` file.
 
 ***
 
