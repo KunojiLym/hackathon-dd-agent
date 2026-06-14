@@ -5,7 +5,12 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
+from openai import OpenAI
+
 from config import get_settings
+from logging_config import get_logger
+
+logger = get_logger(__name__)
 from schemas.report import (
     AnalystChecklistItem,
     Assessment,
@@ -279,6 +284,112 @@ def _build_memo(
     return "\n".join(lines)
 
 
+def _build_sensenova_memo_prompt(
+    subject: Subject,
+    overall_summary: str,
+    disposition: str,
+    disposition_rationale: str,
+    support_summary: dict,
+    triggered_rules: list[str],
+    risk_flags: list[RiskFlag],
+    deterministic_memo: str,
+) -> tuple[str, str]:
+    system_prompt = (
+        "You write compliance memos for a reputational screening workflow. "
+        "Preserve the facts and disposition in the provided draft. "
+        "Return plain text only, without markdown fences or bullet rewrites that add new facts."
+    )
+    triggered_rule_lines = [f"- {rule}" for rule in triggered_rules[:8]] or ["- None"]
+    risk_flag_lines = [
+        f"- [{flag.severity.value}] {flag.title}: {flag.description[:240]}"
+        for flag in risk_flags[:5]
+    ] or ["- None"]
+    user_prompt = "\n".join(
+        [
+            f"Subject: {subject.primary_name}",
+            f"Type: {subject.subject_type.value}",
+            f"Country: {subject.country or 'N/A'}",
+            f"Industry: {subject.industry or 'N/A'}",
+            "",
+            f"Overall summary: {overall_summary}",
+            f"Recommended disposition: {disposition.replace('_', ' ').title()}",
+            f"Disposition rationale: {disposition_rationale}",
+            "",
+            "Support summary:",
+            (
+                f"High-support evidence: {support_summary.get('high_support_evidence_count', 0)}; "
+                f"Medium-support: {support_summary.get('medium_support_evidence_count', 0)}; "
+                f"Low-support: {support_summary.get('low_support_evidence_count', 0)}; "
+                f"Material categories: {support_summary.get('material_category_count', 0)}; "
+                f"Tier-1 hits: {support_summary.get('official_or_tier_1_hits', 0)}."
+            ),
+            "",
+            "Triggered rules:",
+            *triggered_rule_lines,
+            "",
+            "Key risk flags:",
+            *risk_flag_lines,
+            "",
+            "Draft memo to polish:",
+            deterministic_memo,
+        ]
+    )
+    return system_prompt, user_prompt
+
+
+def _maybe_generate_sensenova_memo(
+    subject: Subject,
+    overall_summary: str,
+    disposition: str,
+    disposition_rationale: str,
+    support_summary: dict,
+    triggered_rules: list[str],
+    risk_flags: list[RiskFlag],
+    deterministic_memo: str,
+) -> str:
+    settings = get_settings()
+    if not settings.sensenova_configured:
+        return deterministic_memo
+
+    system_prompt, user_prompt = _build_sensenova_memo_prompt(
+        subject,
+        overall_summary,
+        disposition,
+        disposition_rationale,
+        support_summary,
+        triggered_rules,
+        risk_flags,
+        deterministic_memo,
+    )
+
+    client = OpenAI(
+        base_url=settings.sensenova_base_url,
+        api_key=settings.sensenova_api_key,
+    )
+
+    try:
+        response = client.chat.completions.create(
+            model=settings.sensenova_model,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=0.2,
+            max_tokens=settings.llm_max_output_tokens,
+        )
+        content = (response.choices[0].message.content or "").strip()
+        if not content:
+            raise RuntimeError("SenseNova returned an empty memo")
+        logger.info("SenseNova memo generation succeeded model=%s", settings.sensenova_model)
+        return content
+    except Exception:
+        logger.exception(
+            "SenseNova memo generation failed model=%s; using deterministic memo",
+            settings.sensenova_model,
+        )
+        return deterministic_memo
+
+
 def _build_risk_flags(
     evidence: list[EvidenceItem],
     support_bands: dict[str, str],
@@ -503,6 +614,16 @@ def assemble_report(checkpoint4: dict) -> ReputationScreeningReport:
         support_summary_dict,
         triggered_rules_list,
         risk_flags,
+    )
+    memo_text = _maybe_generate_sensenova_memo(
+        subject,
+        overall_summary,
+        case_result["recommended_disposition"],
+        disposition_rationale,
+        support_summary_dict,
+        triggered_rules_list,
+        risk_flags,
+        memo_text,
     )
 
     assessment = Assessment(

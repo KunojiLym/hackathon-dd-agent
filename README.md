@@ -19,7 +19,6 @@ Reports conform to [`docs/schemas/reputation-screening-report-rubric.schema.v1.j
 
 ```bash
 cd backend
-cp .env.example .env
 pip install -r requirements.txt
 playwright install chromium
 python -m uvicorn main:app --reload --port 8000
@@ -29,7 +28,6 @@ python -m uvicorn main:app --reload --port 8000
 
 ```bash
 cd frontend
-cp .env.example .env
 pip install -r requirements.txt
 streamlit run app.py --server.port 8501
 ```
@@ -38,7 +36,6 @@ On **Windows PowerShell**, use `;` instead of `&&`, and `Copy-Item` instead of `
 
 ```powershell
 cd frontend
-Copy-Item .env.example .env
 pip install -r requirements.txt
 streamlit run app.py --server.port 8501
 ```
@@ -53,7 +50,7 @@ curl -X POST http://localhost:8000/screen \
 
 Poll: `GET http://localhost:8000/screen/{run_id}`
 
-Mock UI only (no API): set `USE_MOCK_DATA=true` in `frontend/.env`.
+Mock UI only (no API): set `USE_MOCK_DATA=true` in `backend/.env`.
 
 ## API summary
 
@@ -95,8 +92,7 @@ hackathon-dd-agent/
 
 ## Configuration
 
-- **Backend** — `backend/.env` (Bright Data, TokenRouter at `api.tokenrouter.com`, etc.)
-- **Frontend** — `frontend/.env` (`BACKEND_URL`, `USE_MOCK_DATA`)
+- **Shared runtime config** — `backend/.env` (Bright Data, LLM, and frontend `BACKEND_URL` / `USE_MOCK_DATA` / polling settings)
 
 See [backend/README.md](backend/README.md) and [frontend/README.md](frontend/README.md).
 

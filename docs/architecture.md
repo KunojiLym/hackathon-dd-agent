@@ -799,7 +799,7 @@ LOG_FILE=logs/pipeline.log
 RUNS_DIR=./runs
 ```
 
-See `backend/.env.example` for the full list including OpenRouter and Kimi overrides.
+See `backend/.env` for the full list, including OpenRouter, Kimi, and shared frontend overrides.
 
 ***
 

@@ -2,12 +2,10 @@
 
 import os
 from functools import lru_cache
-from pathlib import Path
 
-from dotenv import load_dotenv
+from env_shared import load_shared_env
 
-_FRONTEND_DIR = Path(__file__).resolve().parent
-load_dotenv(_FRONTEND_DIR / ".env")
+load_shared_env()
 
 
 @lru_cache

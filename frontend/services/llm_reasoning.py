@@ -1,9 +1,10 @@
 import os
 import json
-from dotenv import load_dotenv
 from openai import OpenAI
 
-load_dotenv()
+from env_shared import load_shared_env
+
+load_shared_env()
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 

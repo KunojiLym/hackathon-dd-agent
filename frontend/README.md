@@ -15,14 +15,15 @@ python -m uvicorn main:app --port 8000
 
 ```bash
 cd frontend
-cp .env.example .env
 pip install -r requirements.txt
 streamlit run app.py --server.port 8501
 ```
 
 Open http://localhost:8501
 
-## Configuration (`frontend/.env`)
+## Configuration (`backend/.env`)
+
+The frontend reads the shared backend env file, so there is only one runtime config file to edit.
 
 | Variable | Default | Description |
 |----------|---------|-------------|

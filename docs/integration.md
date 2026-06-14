@@ -24,7 +24,6 @@ Terminal 1 — backend:
 
 ```bash
 cd backend
-cp .env.example .env   # configure keys
 pip install -r requirements.txt
 playwright install chromium
 python -m uvicorn main:app --reload --port 8000
@@ -34,7 +33,6 @@ Terminal 2 — frontend:
 
 ```bash
 cd frontend
-cp .env.example .env
 pip install -r requirements.txt
 streamlit run app.py --server.port 8501
 ```
@@ -43,7 +41,6 @@ Windows PowerShell:
 
 ```powershell
 cd frontend
-Copy-Item .env.example .env
 pip install -r requirements.txt
 streamlit run app.py --server.port 8501
 ```
@@ -113,7 +110,7 @@ Any client can either adopt the v1 schema or reuse `report_adapter.py`.
 For demos without API credits:
 
 ```bash
-# frontend/.env
+# backend/.env
 USE_MOCK_DATA=true
 ```
 

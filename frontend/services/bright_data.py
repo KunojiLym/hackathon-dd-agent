@@ -1,7 +1,7 @@
 import os
-from dotenv import load_dotenv
+from env_shared import load_shared_env
 
-load_dotenv()
+load_shared_env()
 
 BRIGHTDATA_API_KEY = os.getenv("BRIGHTDATA_API_KEY")
 

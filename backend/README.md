@@ -6,7 +6,6 @@ FastAPI backend for the Agent Forge hackathon reputational screening agent.
 
 ```bash
 cd backend
-cp .env.example .env
 # Edit .env with your API keys
 
 pip install -r requirements.txt
@@ -98,7 +97,7 @@ Each stage checkpoints to `runs/{run_id}/`. Entity resolution artifacts: `checkp
 
 ## Environment variables
 
-See `.env.example`. Bright Data free tier setup:
+See `backend/.env`. Bright Data free tier setup:
 
 - `BRIGHT_DATA_API_KEY` — account API key for SERP API (`/request` endpoint)
 - `BRIGHT_DATA_SERP_ZONE` — SERP API zone name
@@ -124,6 +123,14 @@ LLM Stage 4 providers (`LLM_PROVIDER`):
 | `tokenrouter` (default) | `TOKENROUTER_API_KEY` | `TOKENROUTER_MODEL=MiniMax-M3` |
 | `openrouter` | `OPENROUTER_API_KEY` | `OPENROUTER_MODEL=minimax-v3` |
 | `kimi` | `KIMI_API_KEY` + `KIMI_BASE_URL` | `KIMI_MODEL` |
+
+Stage 5 can also optionally rewrite the final memo with SenseNova when configured:
+
+- `SENSENOVA_API_KEY`
+- `SENSENOVA_BASE_URL` (default: `https://api.sensenova.cn/compatible-mode/v1`)
+- `SENSENOVA_MODEL` (default: `SenseNova-5`)
+
+If SenseNova is unavailable or returns an error, the backend falls back to the deterministic rule-based memo.
 
 ## Demo replay (no API credits)
 

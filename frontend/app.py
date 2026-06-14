@@ -42,16 +42,33 @@ def _fmt_value(value) -> str:
     if value is None:
         return "None"
     if isinstance(value, list):
-        return ", ".join(str(v) for v in value) if value else "None"
+        return html.escape(", ".join(str(v) for v in value)) if value else "None"
     text = str(value).strip()
-    return text if text else "None"
+    return html.escape(text) if text else "None"
+
+
+_COUNTRY_FLAGS = {
+    "singapore": "🇸🇬", "united states": "🇺🇸", "usa": "🇺🇸", "us": "🇺🇸",
+    "united kingdom": "🇬🇧", "uk": "🇬🇧", "china": "🇨🇳", "hong kong": "🇭🇰",
+    "australia": "🇦🇺", "germany": "🇩🇪", "france": "🇫🇷", "india": "🇮🇳",
+    "japan": "🇯🇵", "canada": "🇨🇦", "brazil": "🇧🇷", "russia": "🇷🇺",
+    "uae": "🇦🇪", "malaysia": "🇲🇾", "indonesia": "🇮🇩", "thailand": "🇹🇭",
+    "south korea": "🇰🇷", "netherlands": "🇳🇱", "switzerland": "🇨🇭",
+}
+
+def _fmt_country(value) -> str:
+    if not value or value == "None":
+        return "None"
+    text = str(value).strip()
+    flag = _COUNTRY_FLAGS.get(text.lower(), "")
+    return f"{flag}&nbsp;{html.escape(text)}" if flag else html.escape(text)
 
 
 def _kv_rows(pairs: list[tuple[str, str]]) -> str:
     rows = []
     for label, value in pairs:
         rows.append(
-            f"<div class='kv-row'><div class='kv-label'>{html.escape(label)}</div><div class='kv-value'>{html.escape(value)}</div></div>"
+            f"<div class='kv-row'><div class='kv-label'>{html.escape(label)}</div><div class='kv-value'>{value}</div></div>"
         )
     return "".join(rows)
 
@@ -146,13 +163,16 @@ st.markdown(
     """
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap');
-.stApp { font-family: 'Manrope', sans-serif; background: linear-gradient(180deg, #f6f9ff 0%, #edf3ff 100%); }
+.stApp { font-family: 'Manrope', sans-serif; background: #ffffff; }
 header[data-testid="stHeader"] { display: block !important; background: transparent !important; }
 button[kind="headerNoPadding"] { display: none !important; }
 [data-testid="collapsedControl"] { display: none !important; visibility: hidden !important; }
 [data-testid="stSidebarCollapseButton"] { display: none !important; }
-div[data-testid="stAppViewContainer"] { background: linear-gradient(180deg, #f7f9fd 0%, #f0f4fb 100%); }
-h1,h2,h3,h4,h5 { font-family: 'Space Grotesk', sans-serif !important; }
+div[data-testid="stAppViewContainer"] { background: #ffffff; }
+h1,h2,h3,h4,h5 { font-family: 'Space Grotesk', sans-serif !important; color: #1a2f5e; }
+:root { --assessment-header-size: 24px; --assessment-header-weight: 700; --assessment-header-color: #1a2f5e; }
+h3, h4 { font-size: var(--assessment-header-size) !important; font-weight: var(--assessment-header-weight) !important; line-height: 1.2; color: var(--assessment-header-color) !important; }
+.header-standard { font-family: 'Space Grotesk', sans-serif !important; font-size: var(--assessment-header-size); font-weight: var(--assessment-header-weight); color: var(--assessment-header-color); line-height: 1.2; }
 section[data-testid="stSidebar"] { background: linear-gradient(190deg, #061a3a 0%, #0a2d5d 58%, #07214a 100%) !important; border-right: 1px solid rgba(180,210,255,0.25); }
 section[data-testid="stSidebar"] * { color: #edf4ff !important; }
 section[data-testid="stSidebar"] .block-container { padding: 16px 14px 16px 14px !important; }
@@ -163,38 +183,156 @@ section[data-testid="stSidebar"] .block-container { padding: 16px 14px 16px 14px
 .chip { display: inline-block; font-size: 10.5px; font-weight: 700; padding: 4px 10px; margin-right: 6px; margin-bottom: 4px; border: 1px solid #cfe0fb; border-radius: 999px; background: #f7fbff; color: #2c4f80; }
 .metric-card { background: #fff; border: 1px solid #d2e2fb; border-radius: 14px; padding: 10px 12px; min-height: 94px; box-shadow: 0 8px 18px rgba(24,47,82,0.07); }
 .metric-top { display: flex; align-items: center; gap: 8px; margin-bottom: 3px; }
-.metric-icon { width: 28px; height: 28px; border-radius: 9px; display: inline-flex; align-items: center; justify-content: center; font-size: 15px; }
-.i-risk { background: #e8f0ff; color: #2f6fed; }
-.i-evidence { background: #efe7ff; color: #7651ff; }
-.i-entity { background: #def7ef; color: #15a173; }
-.i-coverage { background: #ece9ff; color: #7355ff; }
-.i-disposition { background: #def7f6; color: #119c93; }
-.metric-label { font-size: 11px; color: #597294; font-weight: 700; text-transform: uppercase; }
+.metric-icon { width: 32px; height: 32px; border-radius: 10px; display: inline-flex; align-items: center; justify-content: center; font-size: 17px; flex-shrink: 0; }
+.i-risk { background: #e8f0ff; }
+.i-evidence { background: #efe7ff; }
+.i-entity { background: #def7ef; }
+.i-coverage { background: #ece9ff; }
+.i-disposition { background: #def7f6; }
+.metric-label { font-size: 11px; color: #597294; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
 .metric-v1 { color: #c55e31; font-size: 17px; font-weight: 800; }
-.metric-v2 { color: #cc4e68; font-size: 22px; font-weight: 800; }
+.metric-v2 { color: #cc4e68; font-size: 15px; font-weight: 800; white-space: nowrap; }
 .metric-v3 { color: #129069; font-size: 22px; font-weight: 800; }
 .metric-v4 { color: #2d6be3; font-size: 19px; font-weight: 800; }
-.metric-v5 { color: #0f9d8d; font-size: 15px; font-weight: 800; }
-.metric-caption { color: #5f7798; font-size: 10.5px; }
+.metric-v5 { color: #0f9d8d; font-size: 13px; font-weight: 800; line-height: 1.3; }
+.metric-caption { color: #5f7798; font-size: 10.5px; margin-top: 3px; }
 .panel { background: #fff; border: 1px solid #d6e5fb; border-radius: 14px; padding: 12px; box-shadow: 0 8px 18px rgba(24,47,82,0.08); }
+[data-testid="stVerticalBlockBorderWrapper"] { border-radius: 14px !important; border: 1px solid #d6e5fb !important; background: #ffffff !important; box-shadow: none !important; padding: 8px 12px 12px 12px !important; }
+[data-testid="stVerticalBlockBorderWrapper"] > div { background: #ffffff !important; }
+[data-testid="stVerticalBlockBorderWrapper"] [data-testid="stVerticalBlock"] { background: #ffffff !important; }
 .form-card { background:#ffffff; border:1px solid #d6e3f5; border-radius:12px; padding:8px 10px; box-shadow: 0 6px 14px rgba(24,47,82,0.06); margin-bottom:10px; }
 .rule-box { background: #f8fbff; border: 1px solid #d8e6fc; border-left: 3px solid #2d6be3; border-radius: 8px; padding: 8px; margin-bottom: 6px; font-size: 12px; }
+.kf-shell { margin-top: 10px; border: 1px solid #dce6f7; border-radius: 12px; background: #ffffff; overflow: hidden; }
+.kf-head { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-bottom: 1px solid #e8eef8; }
+.kf-head-icon { width: 22px; height: 22px; border-radius: 7px; background: linear-gradient(160deg,#2f7de1,#1c62d6); color: #ffffff; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; }
+.kf-head-title { font-family: 'Space Grotesk', sans-serif !important; font-size: 20px; font-weight: var(--assessment-header-weight); color: var(--assessment-header-color); line-height: 1.2; }
+.kf-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 12px; border-top: 1px solid #edf2fb; }
+.kf-left { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.kf-chevron { color: #7d91ad; font-size: 15px; line-height: 1; }
+.kf-title { font-size: 13px; color: #2a3a54; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.kf-sev { font-size: 13px; font-weight: 700; display: inline-flex; align-items: center; gap: 5px; flex-shrink: 0; }
+.kf-dot { font-size: 11px; line-height: 1; }
+.kf-sev-high { color: #eb3131; }
+.kf-sev-medium { color: #d78619; }
+.kf-sev-low { color: #1d9a64; }
+.kf-empty { padding: 12px; color: #5e7392; font-size: 13px; }
+.kf-shell .streamlit-expanderHeader { font-size: 13px !important; color: #2a3a54 !important; font-weight: 500 !important; }
+.memo-preview-title { font-size: 20px !important; }
+.reviewer-decision-title { font-size: 20px !important; }
+.ev-shell { margin-top: 6px; border: 1px solid #dce6f7; border-radius: 12px; background: #ffffff; padding: 10px; }
+.ev-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.ev-title-wrap { display: flex; align-items: center; gap: 8px; }
+.ev-icon { width: 22px; height: 22px; border-radius: 7px; background: linear-gradient(160deg,#56cf9b,#2da879); color: #ffffff; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; }
+.ev-title { font-size: 30px; }
+.ev-viewall { border: 1px solid #e5eaf2; border-radius: 8px; background: #f8fafc; color: #8a96a7; font-size: 10px; font-weight: 600; padding: 4px 8px; }
+.ev-table-wrap { border: 1px solid #e7edf7; border-radius: 8px; overflow: hidden; }
+.ev-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.ev-table th { text-align: left; font-size: 12px; font-weight: 500; color: #7f8b9b; background: #f7f9fc; padding: 8px 10px; border-right: 1px solid #e7edf7; }
+.ev-table th:last-child { border-right: none; }
+.ev-table td { font-size: 13px; color: #2a3a54; padding: 8px 10px; border-top: 1px solid #e7edf7; border-right: 1px solid #e7edf7; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ev-table td:last-child { border-right: none; }
+.ev-subrows { border: 1px solid #e7edf7; border-top: none; border-radius: 0 0 8px 8px; }
+.ev-subrow { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-top: 1px solid #edf2fb; font-size: 13px; color: #2a3a54; }
+.ev-subrow:first-child { border-top: none; }
+.ev-chevron { color: #8b98ab; font-size: 15px; line-height: 1; }
+.rf-shell { margin-top: 6px; border: 1px solid #dce6f7; border-radius: 12px; background: #ffffff; padding: 10px; }
+.rf-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.rf-title-wrap { display: flex; align-items: center; gap: 8px; }
+.rf-icon { width: 22px; height: 22px; border-radius: 7px; background: linear-gradient(160deg,#ff6a60,#f13c35); color: #ffffff; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; }
+.rf-viewall { border: 1px solid #e5eaf2; border-radius: 8px; background: #f8fafc; color: #8a96a7; font-size: 10px; font-weight: 600; padding: 4px 8px; }
+.rf-table-wrap { border: 1px solid #e7edf7; border-radius: 8px; overflow: hidden; }
+.rf-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.rf-table th { text-align: left; font-size: 12px; font-weight: 500; color: #7f8b9b; background: #f7f9fc; padding: 8px 10px; border-right: 1px solid #e7edf7; }
+.rf-table th:last-child { border-right: none; }
+.rf-table td { font-size: 13px; color: #2a3a54; padding: 8px 10px; border-top: 1px solid #e7edf7; border-right: 1px solid #e7edf7; vertical-align: middle; }
+.rf-table td:last-child { border-right: none; }
+.rf-strong { font-weight: 700; }
+.rf-badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: 600; }
+.rf-badge-high { background: #ffeceb; color: #e23a33; }
+.rf-badge-status { background: #fff3dc; color: #c27d1d; }
+.rbd-shell { margin-top: 14px; border: 1px solid #dce6f7; border-radius: 12px; background: #ffffff; padding: 10px; }
+.rbd-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.rbd-icon { width: 22px; height: 22px; border-radius: 7px; background: linear-gradient(160deg,#8f79ff,#6f57db); color: #ffffff; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; }
+.rbd-method { margin-top: 6px; border: 1px solid #d7e2f7; border-radius: 8px; background: #f5f8ff; padding: 10px 12px; display: flex; align-items: center; justify-content: space-between; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 12px; color: #2f3f59; }
+.rbd-copy { font-size: 14px; color: #7b8ca6; }
+.rbd-stats { margin-top: 10px; border: 1px solid #e7edf7; border-radius: 8px; background: #ffffff; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.rbd-stat { padding: 10px 8px; text-align: center; border-right: 1px solid #edf2fb; }
+.rbd-stat:last-child { border-right: none; }
+.rbd-label { font-size: 12px; color: #5f7290; margin-bottom: 4px; }
+.rbd-value { font-size: 38px; font-weight: 700; line-height: 1; }
+.rbd-high { color: #f04438; }
+.rbd-medium { color: #f08c00; }
+.rbd-low { color: #12a66a; }
+.rbd-material { color: #2f6fed; }
+.rbd-tier { color: #0f172a; }
+.trg-shell { margin-top: 10px; border: 1px solid #dce6f7; border-radius: 12px; background: #ffffff; padding: 10px; }
+.trg-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.trg-icon { width: 22px; height: 22px; border-radius: 7px; background: linear-gradient(160deg,#7aa4ff,#4d72f3); color: #ffffff; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; }
+.aud-shell { margin-top: 6px; border: 1px solid #dce6f7; border-radius: 12px; background: #ffffff; padding: 10px; max-width: 560px; }
+.aud-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.aud-icon { width: 22px; height: 22px; border-radius: 7px; background: linear-gradient(160deg,#58d7a0,#2aa579); color: #ffffff; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; }
+.aud-table-wrap { border: 1px solid #e7edf7; border-radius: 8px; overflow: hidden; }
+.aud-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.aud-table th { text-align: left; font-size: 12px; font-weight: 500; color: #7f8b9b; background: #f7f9fc; padding: 8px 10px; border-right: 1px solid #e7edf7; }
+.aud-table th:last-child { border-right: none; }
+.aud-table td { font-size: 12px; color: #2a3a54; padding: 8px 10px; border-top: 1px solid #e7edf7; border-right: 1px solid #e7edf7; vertical-align: top; word-break: break-word; }
+.aud-table td:last-child { border-right: none; }
+.fm-shell { margin-top: 6px; border: 1px solid #dce6f7; border-radius: 12px; background: #ffffff; padding: 10px; max-width: 560px; }
+.fm-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.fm-icon { width: 22px; height: 22px; border-radius: 7px; background: linear-gradient(160deg,#66a9ff,#2f76df); color: #ffffff; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; }
+.fm-title { font-family: 'Space Grotesk', sans-serif !important; font-size: 30px; font-weight: 700; color: #1a2f5e; line-height: 1.2; }
+.fm-subject { border: 1px solid #d7e2f7; border-radius: 8px; background: #f5f8ff; padding: 10px 12px; font-size: 12px; color: #2a3a54; margin-bottom: 10px; }
+.fm-subject-value { color: #2f6fed; }
+.fm-body { font-size: 13px; color: #2a3a54; line-height: 1.6; margin-bottom: 10px; }
+.fm-disp { border: 1px solid #d7e2f7; border-radius: 8px; background: #f8fbff; padding: 10px 12px; }
+.fm-disp-line { font-size: 13px; color: #2a3a54; margin-bottom: 6px; }
+.fm-disp-body { font-size: 13px; color: #2a3a54; line-height: 1.6; }
+.rub-shell { margin-top: 6px; border: 1px solid #dce6f7; border-radius: 12px; background: #ffffff; padding: 10px; }
+.rub-head { display: flex; align-items: center; gap: 8px; margin-bottom: 2px; }
+.rub-icon { width: 22px; height: 22px; border-radius: 7px; background: linear-gradient(160deg,#8b79ff,#6f57db); color: #ffffff; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; }
+.rub-version { font-size: 12px; color: #5f7290; margin: 2px 0 10px 30px; }
+.rub-subtitle { font-family: 'Space Grotesk', sans-serif !important; font-size: 20px; font-weight: 700; color: #1a2f5e; margin: 8px 0 8px 0; }
+.rub-table-wrap { border: 1px solid #e7edf7; border-radius: 8px; overflow: hidden; }
+.rub-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.rub-table th { text-align: left; font-size: 12px; font-weight: 500; color: #7f8b9b; background: #f7f9fc; padding: 8px 10px; border-right: 1px solid #e7edf7; }
+.rub-table th:last-child { border-right: none; }
+.rub-table td { font-size: 13px; color: #2a3a54; padding: 8px 10px; border-top: 1px solid #e7edf7; border-right: 1px solid #e7edf7; }
+.rub-table td:last-child { border-right: none; }
+.rub-rules-grid { margin-top: 10px; display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.rub-rule-title { font-family: 'Space Grotesk', sans-serif !important; font-size: 18px; font-weight: 700; color: #1a2f5e; margin: 0 0 6px 0; }
+.rub-rule-list { margin: 0; padding-left: 18px; }
+.rub-rule-list li { font-size: 13px; color: #2a3a54; margin-bottom: 6px; }
 .mock-badge { display: inline-block; padding: 3px 8px; border-radius: 6px; font-size: 10px; font-weight: 800; color: #1f2937; background: #f59e0b; margin-bottom: 8px; }
 .mock-banner { background: #fff7df; border: 1px solid #f6c25f; color: #8b5a0b; border-radius: 8px; padding: 8px 12px; margin-bottom: 8px; font-size: 12px; font-weight: 700; }
-.stButton > button { border-radius: 12px !important; border: 1px solid rgba(18,132,124,0.4) !important; background: linear-gradient(90deg,#1f70cf,#119385) !important; color: #fff !important; font-weight: 700 !important; }
+.stButton > button { border-radius: 12px !important; border: 1px solid rgba(18,132,124,0.4) !important; background: linear-gradient(90deg,#1f70cf,#119385) !important; color: #fff !important; font-weight: 700 !important; width: 100% !important; }
 .stTextInput > div > div > input, .stTextArea textarea, .stSelectbox div[data-baseweb="select"] > div { border-radius: 12px !important; border: 1px solid #cadaf4 !important; }
 .stTabs [data-baseweb="tab-list"] {
     gap: 6px;
     border-bottom: 1px solid #d7e2f4;
     padding-bottom: 0;
-    margin-bottom: 10px;
+    margin-bottom: 0;
+    background: #ffffff;
+    border-radius: 16px 16px 0 0;
+    border: 1px solid #dce6f7;
+    border-bottom: none;
+    padding: 0 16px;
+    box-shadow: 0 -2px 8px rgba(24,47,82,0.03);
+}
+.stTabs [data-baseweb="tab-panel"] {
+    background: #ffffff;
+    border: 1px solid #dce6f7;
+    border-top: none;
+    border-radius: 0 0 16px 16px;
+    padding: 16px 20px 20px 20px;
+    box-shadow: 0 4px 16px rgba(24,47,82,0.06);
 }
 .stTabs [data-baseweb="tab"] {
     font-size: 16px;
     font-weight: 600;
     color: #3b4d72;
-    padding: 8px 8px 10px 8px;
+    padding: 10px 8px 12px 8px;
     border-bottom: 2px solid transparent;
+    background: transparent;
 }
 .stTabs [aria-selected="true"] {
     color: #2b406a !important;
@@ -202,22 +340,24 @@ section[data-testid="stSidebar"] .block-container { padding: 16px 14px 16px 14px
 }
 .hero-shield-wrap { text-align: center; padding-top: 2px; }
 .hero-shield { width:120px; height:120px; margin:0 auto; border-radius:50%; background:radial-gradient(circle at 40% 35%, #61a4ff, #2456d6); color:#fff; display:flex; align-items:center; justify-content:center; font-size:62px; border:4px solid #e7efff; box-shadow:0 12px 22px rgba(35,73,151,0.22); }
-.panel-title { font-size: 24px; font-weight: 700; color:#1d3361; margin-bottom:8px; }
+.panel-title { font-family: 'Space Grotesk', sans-serif !important; font-size: var(--assessment-header-size); font-weight: var(--assessment-header-weight); color: var(--assessment-header-color); margin-bottom:8px; line-height: 1.2; }
 .memo-snippet { font-size:12px; color:#3e5884; line-height:1.5; max-height:120px; overflow:hidden; }
 .ghost-link { border:1px solid #d4e0f6; border-radius:9px; padding:8px 10px; font-size:12px; color:#2a5ac8; background:#f8fbff; display:inline-block; }
-.assessment-shell { border: 1px solid #d6e3f5; border-radius: 14px; background: #ffffff; padding: 16px; }
-.assessment-head { display:flex; align-items:center; gap:10px; margin-bottom:8px; }
-.assessment-icon { width:36px; height:36px; border-radius:10px; background:#e8f0ff; color:#2f6fed; display:flex; align-items:center; justify-content:center; font-size:16px; font-weight:700; }
-.assessment-title { font-size:23px; font-weight:700; color:#1e315d; line-height: 1.2; }
-.assessment-summary { font-size:13px; color:#2f446e; margin:6px 0 14px 0; line-height:1.45; }
-.assessment-columns { display:grid; grid-template-columns: 1fr 1fr; gap:18px; }
-.assessment-col-right { border-left:1px solid #dce5f5; padding-left:16px; }
-.section-title { font-size:20px; font-weight:700; color:#1f315d; margin-bottom:6px; line-height:1.15; }
-.kv-row { display:grid; grid-template-columns: 136px 1fr; gap:8px; margin:7px 0; }
-.kv-label { font-size:13px; font-weight:700; color:#223a69; }
-.kv-value { font-size:13px; color:#314c7d; }
-.assessment-divider { border-top:1px solid #dce5f5; margin:14px 0 11px 0; }
-.scope-grid { display:grid; grid-template-columns: 1fr 1fr; gap:18px; }
+.assessment-shell { padding: 8px 8px; }
+.assessment-head { display:flex; align-items:center; gap:12px; margin-bottom:10px; }
+.assessment-icon { width:40px; height:40px; border-radius:11px; background:#e8f1ff; display:flex; align-items:center; justify-content:center; font-size:20px; flex-shrink:0; }
+.assessment-title { font-family: 'Space Grotesk', sans-serif !important; font-size: var(--assessment-header-size); font-weight: var(--assessment-header-weight); color: var(--assessment-header-color); line-height:1.2; }
+.assessment-summary { font-size:13.5px; color:#4a6180; margin:4px 0 20px 0; line-height:1.55; }
+.assessment-columns { display:grid; grid-template-columns: 1fr 1fr; gap:0; min-width:0; }
+.assessment-columns > div { min-width:0; overflow:hidden; }
+.assessment-col-right { border-left:1px solid #e5edf8; padding-left:28px; }
+.section-title { font-family: 'Space Grotesk', sans-serif !important; font-size: var(--assessment-header-size); font-weight: var(--assessment-header-weight); color: var(--assessment-header-color); margin-bottom:10px; padding-bottom:6px; border-bottom:1px solid #eaf0fb; line-height: 1.2; }
+.kv-row { display:grid; grid-template-columns: auto 1fr; gap:6px; margin:8px 0; align-items:baseline; }
+.kv-value { word-break: break-word; min-width: 0; }
+.kv-label { font-size:13px; font-weight:700; color:#1e3560; }
+.kv-value { font-size:13px; color:#2563eb; }
+.assessment-divider { border:none; border-top:1px solid #e5edf8; margin:20px 0 16px 0; }
+.scope-grid { display:grid; grid-template-columns: 1fr 1fr; gap:0; }
 .sb-brand-row { display:flex; align-items:center; gap:10px; margin-bottom:10px; }
 .sb-logo { width:40px; height:40px; flex-shrink:0; border-radius:10px; background:linear-gradient(160deg,#1f70cf,#1ab6a7); display:flex; align-items:center; justify-content:center; font-size:18px; }
 .sb-title { font-size:22px; font-weight:800; line-height:1.1; color:#ffffff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -302,24 +442,22 @@ with hero_left:
 with hero_right:
     st.markdown('<div class="hero"><div class="hero-shield-wrap"><div class="hero-shield">🛡</div></div></div>', unsafe_allow_html=True)
 
-st.markdown('<div class="form-card">', unsafe_allow_html=True)
-
-c1, c2, c3, c4, c5, c6 = st.columns([1.7, 1.0, 1.0, 1.2, 1.0, 0.9])
-with c1:
-    subject_name = st.text_input("Subject Name", subject.get("name", ""))
-with c2:
-    default_type = _api_to_ui_subject_type(subject.get("type", "organization"))
-    subject_type = st.selectbox("Subject Type", SUBJECT_TYPES, index=SUBJECT_TYPES.index(default_type) if default_type in SUBJECT_TYPES else 0)
-with c3:
-    country = st.text_input("Country", subject.get("country", ""))
-with c4:
-    purpose = st.selectbox("Purpose", ["Vendor Onboarding", "HNW Onboarding", "Periodic Review", "Key Person Review"])
-with c5:
-    role = st.text_input("Role", subject.get("role", ""))
-with c6:
-    st.markdown("<div style='height:18px'></div>", unsafe_allow_html=True)
-    run = st.button("Run Screening", width="stretch")
-st.markdown('</div>', unsafe_allow_html=True)
+with st.container(border=True):
+    c1, c2, c3, c4, c5, c6 = st.columns([1.7, 1.0, 1.0, 1.2, 1.0, 0.9])
+    with c1:
+        subject_name = st.text_input("Subject Name", subject.get("name", ""))
+    with c2:
+        default_type = _api_to_ui_subject_type(subject.get("type", "organization"))
+        subject_type = st.selectbox("Subject Type", SUBJECT_TYPES, index=SUBJECT_TYPES.index(default_type) if default_type in SUBJECT_TYPES else 0)
+    with c3:
+        country = st.text_input("Country", subject.get("country", ""))
+    with c4:
+        purpose = st.selectbox("Purpose", ["Vendor Onboarding", "HNW Onboarding", "Periodic Review", "Key Person Review"])
+    with c5:
+        role = st.text_input("Role", subject.get("role", ""))
+    with c6:
+        st.markdown("<div style='height:18px'></div>", unsafe_allow_html=True)
+        run = st.button("Run Screening", use_container_width=True)
 
 if run:
     if SETTINGS["use_mock_data"]:
@@ -386,18 +524,18 @@ if st.session_state.get("last_success"):
     st.success(st.session_state.last_success)
     st.session_state.last_success = None
 
-m1, m2, m3, m4, m5 = st.columns(5)
-with m1:
-    st.markdown(f"<div class='metric-card'><div class='metric-top'><span class='metric-icon i-risk'>◈</span><div class='metric-label'>Overall Risk</div></div><div class='metric-v1'>{risk.get('riskCategory','Medium Risk')}</div><div class='metric-caption'>{assessment.get('overall_risk_level','medium').title()}</div></div>", unsafe_allow_html=True)
-with m2:
-    support_line = risk.get("supportSummaryLine", f"{support_summary.get('high_support_evidence_count',0)} high / {support_summary.get('medium_support_evidence_count',0)} med / {support_summary.get('low_support_evidence_count',0)} low")
-    st.markdown(f"<div class='metric-card'><div class='metric-top'><span class='metric-icon i-evidence'>▤</span><div class='metric-label'>Evidence Support</div></div><div class='metric-v2'>{support_line}</div><div class='metric-caption'>{_trunc((triggered_rules[0] if triggered_rules else 'No rules triggered'))}</div></div>", unsafe_allow_html=True)
-with m3:
-    st.markdown(f"<div class='metric-card'><div class='metric-top'><span class='metric-icon i-entity'>◉</span><div class='metric-label'>Entity Match</div></div><div class='metric-v3'>{entity.get('score',0)}%</div><div class='metric-caption'>{entity.get('level','High')}</div></div>", unsafe_allow_html=True)
-with m4:
-    st.markdown(f"<div class='metric-card'><div class='metric-top'><span class='metric-icon i-coverage'>◔</span><div class='metric-label'>Coverage</div></div><div class='metric-v4'>{assessment.get('coverage_assessment','moderate').title()}</div><div class='metric-caption'>{risk.get('confidenceLabel','Moderate')} confidence</div></div>", unsafe_allow_html=True)
-with m5:
-    st.markdown(f"<div class='metric-card'><div class='metric-top'><span class='metric-icon i-disposition'>✓</span><div class='metric-label'>Disposition</div></div><div class='metric-v5'>{_format_disposition(assessment.get('recommended_disposition') or risk.get('recommendation'))}</div><div class='metric-caption'>Human review required</div></div>", unsafe_allow_html=True)
+support_line = risk.get("supportSummaryLine", f"{support_summary.get('high_support_evidence_count',0)} high / {support_summary.get('medium_support_evidence_count',0)} med / {support_summary.get('low_support_evidence_count',0)} low")
+rule_count = len(triggered_rules)
+rule_caption = f"{rule_count} rule{'s' if rule_count != 1 else ''} triggered" if triggered_rules else "No rules triggered"
+st.markdown(f"""
+<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:12px;">
+  <div class='metric-card'><div class='metric-top'><span class='metric-icon i-risk'>🛡️</span><div class='metric-label'>Overall Risk</div></div><div class='metric-v1'>{risk.get('riskCategory','Medium Risk')}</div><div class='metric-caption'>{assessment.get('overall_risk_level','medium').title()}</div></div>
+  <div class='metric-card'><div class='metric-top'><span class='metric-icon i-evidence'>📋</span><div class='metric-label'>Evidence Support</div></div><div class='metric-v2'>{support_line}</div><div class='metric-caption'>{rule_caption}</div></div>
+  <div class='metric-card'><div class='metric-top'><span class='metric-icon i-entity'>👥</span><div class='metric-label'>Entity Match</div></div><div class='metric-v3'>{entity.get('score',0)}%</div><div class='metric-caption'>{entity.get('level','High')}</div></div>
+  <div class='metric-card'><div class='metric-top'><span class='metric-icon i-coverage'>📊</span><div class='metric-label'>Coverage</div></div><div class='metric-v4'>{assessment.get('coverage_assessment','moderate').title()}</div><div class='metric-caption'>{risk.get('confidenceLabel','Moderate')} confidence</div></div>
+  <div class='metric-card'><div class='metric-top'><span class='metric-icon i-disposition'>✅</span><div class='metric-label'>Disposition</div></div><div class='metric-v5'>{_format_disposition(assessment.get('recommended_disposition') or risk.get('recommendation'))}</div><div class='metric-caption'>Human review required</div></div>
+</div>
+""", unsafe_allow_html=True)
 
 left, right = st.columns([2.6, 1.0])
 with left:
@@ -424,7 +562,7 @@ with left:
         subject_pairs = [
             ("Primary Name:", _fmt_value(schema_subject.get("primary_name", subject.get("name")))),
             ("Subject Type:", _fmt_value(schema_subject.get("subject_type", subject.get("type")))),
-            ("Country:", _fmt_value(schema_subject.get("country", subject.get("country")))),
+            ("Country:", _fmt_country(schema_subject.get("country", subject.get("country")))),
             ("Industry:", _fmt_value(schema_subject.get("industry"))),
             ("Aliases:", _fmt_value(schema_subject.get("aliases", []))),
         ]
@@ -437,7 +575,7 @@ with left:
             f"""
             <div class="assessment-shell">
               <div class="assessment-head">
-                <div class="assessment-icon">⎘</div>
+                <div class="assessment-icon">📋</div>
                 <div class="assessment-title">Assessment Summary</div>
               </div>
               <div class="assessment-summary">{html.escape(assessment.get('overall_summary', risk.get('summary', '')))}</div>
@@ -466,106 +604,277 @@ with left:
             unsafe_allow_html=True,
         )
 
-        st.markdown("### Key Findings")
         findings = data.get("keyFindings", [])
-        if not findings and not risk_flags:
-            st.info("No key findings available.")
+        finding_items = []
         for finding in findings:
-            with st.expander(f"{finding.get('title', 'Finding')} - {finding.get('severity', 'Medium')}"):
-                st.write(f"**Category:** {finding.get('category', '')}")
-                st.write(f"**Confidence:** {finding.get('confidence', 0)}%")
-                st.write(finding.get("description", ""))
-        if risk_flags:
-            st.markdown("### Risk Flags")
-            for flag in risk_flags:
-                with st.expander(f"{flag.get('title', 'Risk Flag')} - {str(flag.get('severity', 'medium')).title()}"):
-                    st.write(f"**Category:** {flag.get('category', 'other')}")
-                    st.write(f"**Status:** {flag.get('status', 'open')}")
-                    st.write(f"**Evidence IDs:** {', '.join(flag.get('evidence_ids', []))}")
-                    st.write(flag.get("description", ""))
+            finding_items.append(
+                {
+                    "title": finding.get("title") or finding.get("description") or "Finding",
+                    "severity": str(finding.get("severity", "Medium")).title(),
+                    "category": finding.get("category", ""),
+                    "description": finding.get("description", ""),
+                    "confidence": finding.get("confidence", ""),
+                }
+            )
+        for flag in risk_flags:
+            finding_items.append(
+                {
+                    "title": flag.get("title") or flag.get("description") or "Risk Flag",
+                    "severity": str(flag.get("severity", "medium")).title(),
+                    "category": flag.get("category", ""),
+                    "description": flag.get("description", ""),
+                    "confidence": "",
+                }
+            )
+
+        empty_html = "<div class='kf-empty'>No key findings available.</div>" if not finding_items else ""
+        st.markdown(
+            f"""
+            <div class='kf-shell'>
+              <div class='kf-head'>
+                <span class='kf-head-icon'>⌕</span>
+                <div class='kf-head-title'>Key Findings</div>
+              </div>
+              {empty_html}
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        for item in finding_items:
+            title = str(item.get("title", "Finding"))
+            with st.expander(title):
+                if item.get("severity"):
+                    st.markdown(f"**Severity:** {item['severity']}")
+                if item.get("category"):
+                    st.markdown(f"**Category:** {item['category']}")
+                if item.get("confidence") not in ("", None):
+                    st.markdown(f"**Confidence:** {item['confidence']}%")
+                if item.get("description"):
+                    st.markdown(str(item["description"]))
 
     with t2:
-        st.markdown("### Evidence")
         ev_df = pd.DataFrame(evidence_raw)
         if ev_df.empty:
             st.info("No evidence items found.")
         else:
-            st.dataframe(
-                pd.DataFrame(
-                    {
-                        "Evidence ID": ev_df.get("evidence_id", ""),
-                        "Source Type": ev_df.get("source_type", ""),
-                        "Source": ev_df.get("source_name", ""),
-                        "Title": ev_df.get("title", ""),
-                        "Support Band": ev_df.get("support_band", ""),
-                        "Adverse": ev_df.get("is_adverse", ""),
-                    }
-                ),
-                width="stretch",
-                hide_index=True,
+            table_rows = []
+            for _, row in ev_df.iterrows():
+                ev_id = html.escape(str(row.get("evidence_id", "")))
+                source_type = html.escape(str(row.get("source_type", "")))
+                source_name = html.escape(str(row.get("source_name", "")))
+                title = html.escape(str(row.get("title", "")))
+                table_rows.append(
+                    f"<tr><td>{ev_id}</td><td>{source_type}</td><td>{source_name}</td><td>{title}</td></tr>"
+                )
+
+            st.markdown(
+                f"""
+                <div class='ev-shell'>
+                  <div class='ev-head'>
+                    <div class='ev-title-wrap'>
+                      <span class='ev-icon'>▦</span>
+                      <span class='header-standard ev-title'>Evidence</span>
+                    </div>
+                    <span class='ev-viewall'>View all</span>
+                  </div>
+                  <div class='ev-table-wrap'>
+                    <table class='ev-table'>
+                      <thead>
+                        <tr>
+                          <th style='width:13%;'>Evidence ID</th>
+                          <th style='width:13%;'>Source Type</th>
+                          <th style='width:17%;'>Source</th>
+                          <th>Title</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {''.join(table_rows)}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
             )
 
-            for _, row in ev_df.iterrows():
-                rubric = row.get("rubric_assessment") or {}
-                with st.expander(f"{row.get('evidence_id', 'EV')} - {row.get('source_name', '')}"):
-                    st.write(f"**URL:** {row.get('url', '')}")
-                    st.write(f"**Publication Date:** {row.get('publication_date', '')}")
-                    st.write(f"**Risk Categories:** {', '.join(row.get('risk_categories', []))}")
-                    st.write(f"**Snippet:** {row.get('snippet', '')}")
-                    st.write("**Rubric Assessment**")
-                    st.json(rubric)
+            for idx, row in ev_df.iterrows():
+                ev_id = str(row.get("evidence_id", "EV"))
+                source_name = str(row.get("source_name", ""))
+                title = str(row.get("title", ""))
+                source_type = str(row.get("source_type", ""))
+                url = str(row.get("url", ""))
+                publication_date = str(row.get("publication_date", ""))
+                snippet = str(row.get("snippet", ""))
+                risk_categories = row.get("risk_categories", [])
+
+                with st.expander(f"{ev_id} - {source_name}"):
+                    if title:
+                        st.markdown(f"**Title:** {title}")
+                    st.markdown(f"**Source Type:** {source_type}")
+                    if publication_date:
+                        st.markdown(f"**Publication Date:** {publication_date}")
+                    if url:
+                        st.markdown(f"**URL:** {url}")
+                    if risk_categories:
+                        st.markdown(f"**Risk Categories:** {', '.join(risk_categories)}")
+                    if snippet:
+                        st.markdown(f"**Snippet:** {snippet}")
+
+                # Keep evidence details under EV/source dropdown only; finding titles are shown in Key Findings.
 
     with t3:
-        st.markdown("### Risk Flags")
-        if risk_flags:
-            flags_df = pd.DataFrame(
-                [
-                    {
-                        "Flag ID": f.get("flag_id", ""),
-                        "Category": f.get("category", ""),
-                        "Severity": f.get("severity", ""),
-                        "Status": f.get("status", ""),
-                        "Title": f.get("title", ""),
-                    }
-                    for f in risk_flags
-                ]
-            )
-            st.dataframe(flags_df, width="stretch", hide_index=True)
-        else:
-            st.info("No risk flags were generated.")
+                rf_rows = []
+                for flag in risk_flags:
+                        rf_rows.append(
+                                "<tr>"
+                                f"<td class='rf-strong'>{html.escape(str(flag.get('flag_id', '')))}</td>"
+                                f"<td>{html.escape(str(flag.get('category', '')))}</td>"
+                                f"<td><span class='rf-badge rf-badge-high'><span>●</span>{html.escape(str(flag.get('severity', '')).title())}</span></td>"
+                                f"<td><span class='rf-badge rf-badge-status'>{html.escape(str(flag.get('status', '')).replace('_', '-'))}</span></td>"
+                                f"<td>{html.escape(str(flag.get('title', '')))}</td>"
+                                "</tr>"
+                        )
 
-        st.markdown("### Rule-Based Determination")
-        st.code(determination.get("method", "rule_based_v1"))
-        s1, s2, s3, s4, s5 = st.columns(5)
-        s1.metric("High", support_summary.get("high_support_evidence_count", 0))
-        s2.metric("Medium", support_summary.get("medium_support_evidence_count", 0))
-        s3.metric("Low", support_summary.get("low_support_evidence_count", 0))
-        s4.metric("Material", support_summary.get("material_category_count", 0))
-        s5.metric("Tier 1", support_summary.get("official_or_tier_1_hits", 0))
+                if not rf_rows:
+                        rf_rows = ["<tr><td colspan='5' style='text-align:center;color:#7f8b9b;'>No risk flags were generated.</td></tr>"]
 
-        st.markdown("### Triggered Rules")
-        if triggered_rules:
-            for rule in triggered_rules:
-                st.markdown(f"<div class='rule-box'>{html.escape(str(rule))}</div>", unsafe_allow_html=True)
-        else:
-            st.info("No triggered rules.")
+                st.markdown(
+                        f"""
+                        <div class='rf-shell'>
+                            <div class='rf-head'>
+                                <div class='rf-title-wrap'>
+                                    <span class='rf-icon'>⚑</span>
+                                    <span class='header-standard'>Risk Flags</span>
+                                </div>
+                                <span class='rf-viewall'>View all</span>
+                            </div>
+                            <div class='rf-table-wrap'>
+                                <table class='rf-table'>
+                                    <thead>
+                                        <tr>
+                                            <th style='width:10%;'>Flag ID</th>
+                                            <th style='width:14%;'>Category</th>
+                                            <th style='width:10%;'>Severity</th>
+                                            <th style='width:12%;'>Status</th>
+                                            <th>Title</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {''.join(rf_rows)}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                        """,
+                        unsafe_allow_html=True,
+                )
+
+                method = html.escape(str(determination.get("method", "rule_based_v1")))
+                high_v = support_summary.get("high_support_evidence_count", 0)
+                med_v = support_summary.get("medium_support_evidence_count", 0)
+                low_v = support_summary.get("low_support_evidence_count", 0)
+                material_v = support_summary.get("material_category_count", 0)
+                tier_v = support_summary.get("official_or_tier_1_hits", 0)
+
+                st.markdown(
+                        f"""
+                        <div class='rbd-shell'>
+                            <div class='rbd-head'>
+                                <span class='rbd-icon'>⚖</span>
+                                <span class='header-standard'>Rule-Based Determination</span>
+                            </div>
+                            <div class='rbd-method'>
+                                <span>{method}</span>
+                                <span class='rbd-copy'>⧉</span>
+                            </div>
+                            <div class='rbd-stats'>
+                                <div class='rbd-stat'><div class='rbd-label'>High</div><div class='rbd-value rbd-high'>{high_v}</div></div>
+                                <div class='rbd-stat'><div class='rbd-label'>Medium</div><div class='rbd-value rbd-medium'>{med_v}</div></div>
+                                <div class='rbd-stat'><div class='rbd-label'>Low</div><div class='rbd-value rbd-low'>{low_v}</div></div>
+                                <div class='rbd-stat'><div class='rbd-label'>Material</div><div class='rbd-value rbd-material'>{material_v}</div></div>
+                                <div class='rbd-stat'><div class='rbd-label'>Tier 1</div><div class='rbd-value rbd-tier'>{tier_v}</div></div>
+                            </div>
+                        </div>
+                        """,
+                        unsafe_allow_html=True,
+                )
+
+                if triggered_rules:
+                        rules_html = "".join(
+                                [f"<div class='rule-box'>{html.escape(str(rule))}</div>" for rule in triggered_rules]
+                        )
+                else:
+                        rules_html = "<div class='kf-empty'>No triggered rules.</div>"
+
+                st.markdown(
+                        f"""
+                        <div class='trg-shell'>
+                            <div class='trg-head'>
+                                <span class='trg-icon'>⚡</span>
+                                <span class='header-standard'>Triggered Rules</span>
+                            </div>
+                            {rules_html}
+                        </div>
+                        """,
+                        unsafe_allow_html=True,
+                )
 
     with t4:
-        st.markdown("### Rubric Definition")
-        st.write(f"**Rubric Version:** {rubric_definition.get('rubric_version', 'N/A')}")
-        scales = rubric_definition.get("component_scales", {})
-        if scales:
-            st.markdown("#### Component Scales")
-            scale_df = pd.DataFrame(
-                [{"Component": k, "Values": ", ".join(v)} for k, v in scales.items()]
-            )
-            st.dataframe(scale_df, width="stretch", hide_index=True)
-        st.markdown("#### Support Band Rules")
-        for item in rubric_definition.get("support_band_rules", []):
-            st.write(f"- {item}")
-        st.markdown("#### Case Risk Rules")
-        for item in rubric_definition.get("case_risk_rules", []):
-            st.write(f"- {item}")
+                scales = rubric_definition.get("component_scales", {})
+                scale_rows = []
+                for k, v in scales.items():
+                        vals = ", ".join(v) if isinstance(v, list) else str(v)
+                        scale_rows.append(
+                                f"<tr><td>{html.escape(str(k))}</td><td>{html.escape(vals)}</td></tr>"
+                        )
+
+                if not scale_rows:
+                        scale_rows = ["<tr><td colspan='2' style='text-align:center;color:#7f8b9b;'>No component scales defined.</td></tr>"]
+
+                support_items = "".join(
+                        [f"<li>{html.escape(str(item))}</li>" for item in rubric_definition.get("support_band_rules", [])]
+                ) or "<li>No support band rules.</li>"
+                case_items = "".join(
+                        [f"<li>{html.escape(str(item))}</li>" for item in rubric_definition.get("case_risk_rules", [])]
+                ) or "<li>No case risk rules.</li>"
+
+                st.markdown(
+                    f"""<div class='rub-shell'>
+<div class='rub-head'>
+<span class='rub-icon'>🗎</span>
+<span class='header-standard'>Rubric Definition</span>
+</div>
+<div class='rub-version'>Rubric Version: {html.escape(str(rubric_definition.get('rubric_version', 'N/A')))}</div>
+
+<div class='rub-subtitle'>Component Scales</div>
+<div class='rub-table-wrap'>
+<table class='rub-table'>
+<thead>
+<tr>
+<th style='width:46%;'>Component</th>
+<th>Values</th>
+</tr>
+</thead>
+<tbody>
+{''.join(scale_rows)}
+</tbody>
+</table>
+</div>
+
+<div class='rub-rules-grid'>
+<div>
+<div class='rub-rule-title'>Support Band Rules</div>
+<ul class='rub-rule-list'>{support_items}</ul>
+</div>
+<div>
+<div class='rub-rule-title'>Case Risk Rules</div>
+<ul class='rub-rule-list'>{case_items}</ul>
+</div>
+</div>
+</div>""",
+                    unsafe_allow_html=True,
+                )
 
     with t5:
         st.markdown("### Analyst Checklist")
@@ -613,26 +922,125 @@ with left:
             st.caption(f"Checklist completion: {done_count}/{len(checklist_items)} items done")
 
     with t6:
-        st.markdown("### Audit Trail")
-        audit_df = pd.DataFrame([{"Field": str(k), "Value": str(v)} for k, v in audit_trail_raw.items()])
-        st.dataframe(audit_df, width="stretch", hide_index=True)
+                def _audit_value(val):
+                        if val is None:
+                                return "-"
+                        if isinstance(val, list):
+                                if not val:
+                                        return "-"
+                                joined = " ".join(str(x) for x in val if str(x).strip())
+                                return joined if joined.strip() else "-"
+                        text = str(val).strip()
+                        if text in {"", "[]"}:
+                                return "-"
+                        return text
+
+                audit_rows = []
+                for k, v in audit_trail_raw.items():
+                        audit_rows.append(
+                                f"<tr><td>{html.escape(str(k))}</td><td>{html.escape(_audit_value(v))}</td></tr>"
+                        )
+                if not audit_rows:
+                        audit_rows = ["<tr><td colspan='2' style='text-align:center;color:#7f8b9b;'>No audit data.</td></tr>"]
+
+                st.markdown(
+                        f"""
+                        <div class='aud-shell'>
+                            <div class='aud-head'>
+                                <span class='aud-icon'>◷</span>
+                                <span class='header-standard' style='font-size:20px;'>Audit Trail</span>
+                            </div>
+                            <div class='aud-table-wrap'>
+                                <table class='aud-table'>
+                                    <thead>
+                                        <tr>
+                                            <th style='width:44%;'>Field</th>
+                                            <th>Value</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {''.join(audit_rows)}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                        """,
+                        unsafe_allow_html=True,
+                )
 
     with t7:
-        st.markdown("### Full Memo")
-        st.write(assessment.get("memo") or memo.get("body", ""))
+                full_subject = schema_subject.get("primary_name") or subject.get("name", "-")
+                full_disposition = _format_disposition(assessment.get("recommended_disposition") or risk.get("recommendation", ""))
+                full_summary = assessment.get("overall_summary") or ""
+                full_rationale = assessment.get("disposition_rationale") or determination.get("rationale") or ""
+
+                st.markdown(
+                        f"""
+                        <div class='fm-shell'>
+                            <div class='fm-head'>
+                                <span class='fm-icon'>📄</span>
+                                <span class='fm-title'>Full Memo</span>
+                            </div>
+                            <div class='fm-subject'>
+                                <b>Subject:</b> <span class='fm-subject-value'>{html.escape(str(full_subject))}</span>
+                            </div>
+                            <div class='fm-body'>{html.escape(str(full_summary))}</div>
+                            <div class='fm-disp'>
+                                <div class='fm-disp-line'><b>Disposition:</b> {html.escape(str(full_disposition))}</div>
+                                <div class='fm-disp-body'>{html.escape(str(full_rationale))}</div>
+                            </div>
+                        </div>
+                        """,
+                        unsafe_allow_html=True,
+                )
 
 with right:
+    subject_name_display = schema_subject.get("primary_name", subject.get("name", ""))
+    disposition_display = _format_disposition(assessment.get("recommended_disposition") or risk.get("recommendation", ""))
+    disposition_rationale = assessment.get("disposition_rationale", determination.get("rationale", ""))
+    memo_body = memo.get("body", "")
+    memo_snippet = html.escape(memo_body[:300]).replace("\n", "<br>") if memo_body else ""
+
     st.markdown(
-        f"<div class='panel'><div class='panel-title'>Memo Preview</div><div class='memo-snippet'>{html.escape(memo.get('body', '')).replace(chr(10), '<br>')}</div><div style='margin-top:10px;'><span class='ghost-link'>View Full Memo ↗</span></div></div>",
+        f"""
+<div class='panel' style='margin-bottom:10px;'>
+  <div style='display:flex;align-items:center;gap:10px;margin-bottom:12px;'>
+    <div style='width:36px;height:36px;border-radius:10px;background:#e8f1ff;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;'>📋</div>
+    <div class='header-standard memo-preview-title'>Memo Preview</div>
+  </div>
+  <div style='font-size:13px;margin-bottom:8px;'><b>Subject:</b> {html.escape(subject_name_display)}</div>
+  <div style='font-size:13px;color:#444;line-height:1.55;margin-bottom:10px;'>{memo_snippet}</div>
+  <div style='font-size:13px;margin-bottom:14px;'><b>Disposition:</b> <span style='color:#0f9d8d;font-weight:700;'>{html.escape(disposition_display)}</span><br><span style='font-size:12px;color:#5f7798;'>{html.escape(disposition_rationale[:120]) if disposition_rationale else ''}</span></div>
+  <div style='border:1px solid #d4e0f6;border-radius:9px;padding:9px 14px;font-size:13px;color:#2a5ac8;background:#f8fbff;display:flex;align-items:center;justify-content:space-between;cursor:pointer;'>
+    <span style='font-weight:600;'>View Full Memo</span>
+    <span style='font-size:16px;'>&#x2197;</span>
+  </div>
+</div>
+""",
         unsafe_allow_html=True,
     )
-    st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
-    st.markdown("<div class='panel'>", unsafe_allow_html=True)
-    st.markdown("#### Reviewer Decision")
-    st.selectbox("Decision", data.get("reviewerDecisionOptions", ["Escalate to Compliance"]))
-    st.text_area("Reviewer Notes", placeholder="Add reviewer notes...")
-    st.button("Submit Decision", width="stretch")
-    st.markdown("</div>", unsafe_allow_html=True)
+
+    with st.container(border=True):
+        st.markdown(
+            """<div style='display:flex;align-items:center;gap:10px;margin-bottom:10px;'>
+  <div style='width:36px;height:36px;border-radius:10px;background:#e8f1ff;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;'>👤</div>
+    <div class='header-standard reviewer-decision-title'>Reviewer Decision</div>
+</div>""",
+            unsafe_allow_html=True,
+        )
+        dcol1, dcol2 = st.columns([0.30, 0.70])
+        with dcol1:
+            st.markdown("<div style='font-size:13px;font-weight:600;color:#1e3560;padding-top:9px;'>Decision</div>", unsafe_allow_html=True)
+        with dcol2:
+            st.selectbox(
+                "Decision",
+                data.get("reviewerDecisionOptions", ["Approve", "Escalate to Compliance", "Reject"]),
+                label_visibility="collapsed",
+            )
+
+        st.markdown("<div style='font-size:13px;font-weight:600;color:#1e3560;margin:6px 0 4px 0;'>Reviewer Notes</div>", unsafe_allow_html=True)
+        st.text_area("Reviewer Notes", placeholder="Add reviewer notes...", label_visibility="collapsed", height=96)
+        st.button("Submit Decision", use_container_width=True)
 
 st.markdown(
     "<div style='margin-top:8px;font-size:11px;color:#0f6d53;background:#e8f9f3;border:1px solid #9edbc6;border-radius:8px;padding:7px 10px;display:inline-block;'><b>Disclaimer:</b> AI-assisted public-source screening only. Human compliance review required.</div>",

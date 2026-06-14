@@ -7,7 +7,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 _BACKEND_DIR = Path(__file__).resolve().parent
 _ENV_FILE = _BACKEND_DIR / ".env"
 
-# Placeholder values from .env.example — treated as "not configured"
+# Placeholder values from the old env template — treated as "not configured"
 PLACEHOLDER_API_KEYS = frozenset(
     {
         "YOUR_BRIGHT_DATA_API_KEY_HERE",
@@ -67,6 +67,9 @@ class Settings(BaseSettings):
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
     openrouter_http_referer: str = "https://github.com/hackathon-dd-agent"
     openrouter_app_title: str = "Reputation Screening Agent"
+    sensenova_api_key: str = ""
+    sensenova_base_url: str = "https://api.sensenova.cn/compatible-mode/v1"
+    sensenova_model: str = "SenseNova-5"
     kimi_api_key: str = ""
     kimi_base_url: str = "https://api.moonshot.ai/v1"
     kimi_model: str = "moonshotai/Kimi-K2-Instruct"
@@ -117,6 +120,12 @@ class Settings(BaseSettings):
     def browser_configured(self) -> bool:
         return bool(self.bright_data_browser_username) and _is_real_password(
             self.bright_data_browser_password
+        )
+
+    @property
+    def sensenova_configured(self) -> bool:
+        return bool(self.sensenova_api_key) and bool(self.sensenova_base_url) and bool(
+            self.sensenova_model
         )
 
     @property
