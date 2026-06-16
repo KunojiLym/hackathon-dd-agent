@@ -23,7 +23,7 @@ st.set_page_config(
 )
 
 FRONTEND_DIR = Path(__file__).resolve().parent
-DEFAULT_DATA_PATH = FRONTEND_DIR / "mock_data" / "mock_data.json"
+DEFAULT_DATA_PATH = FRONTEND_DIR.parent / "docs" / "examples" / "example-profile.json"
 SETTINGS = get_frontend_settings()
 SUBJECT_TYPES = ["Company", "Private Company", "Individual", "HNW Prospect", "Vendor", "Key Person"]
 
@@ -252,12 +252,18 @@ section[data-testid="stSidebar"] .block-container { padding: 16px 14px 16px 14px
 .rf-viewall { border: 1px solid #e5eaf2; border-radius: 8px; background: #f8fafc; color: #8a96a7; font-size: 10px; font-weight: 600; padding: 4px 8px; }
 .rf-table-wrap { border: 1px solid #e7edf7; border-radius: 8px; overflow: hidden; }
 .rf-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-.rf-table th { text-align: left; font-size: 12px; font-weight: 500; color: #7f8b9b; background: #f7f9fc; padding: 8px 10px; border-right: 1px solid #e7edf7; }
+.rf-table th { text-align: left; font-size: 12px; font-weight: 500; color: #7f8b9b; background: #f7f9fc; padding: 8px 10px; border-right: 1px solid #e7edf7; white-space: nowrap; }
 .rf-table th:last-child { border-right: none; }
 .rf-table td { font-size: 13px; color: #2a3a54; padding: 8px 10px; border-top: 1px solid #e7edf7; border-right: 1px solid #e7edf7; vertical-align: middle; }
 .rf-table td:last-child { border-right: none; }
+.rf-table th:nth-child(1), .rf-table td:nth-child(1) { width: 12%; white-space: nowrap; }
+.rf-table th:nth-child(2), .rf-table td:nth-child(2) { width: 18%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rf-table th:nth-child(3), .rf-table td:nth-child(3) { width: 12%; white-space: nowrap; }
+.rf-table th:nth-child(4), .rf-table td:nth-child(4) { width: 12%; white-space: nowrap; }
+.rf-table th:nth-child(5), .rf-table td:nth-child(5) { width: 46%; }
+.rf-table td:nth-child(5) { white-space: normal; word-break: break-word; line-height: 1.4; }
 .rf-strong { font-weight: 700; }
-.rf-badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: 600; }
+.rf-badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: 600; white-space: nowrap; }
 .rf-badge-high { background: #ffeceb; color: #e23a33; }
 .rf-badge-status { background: #fff3dc; color: #c27d1d; }
 .rbd-shell { margin-top: 14px; border: 1px solid #dce6f7; border-radius: 12px; background: #ffffff; padding: 10px; }
@@ -575,11 +581,17 @@ with left:
             ("Country:", _fmt_country(schema_subject.get("country", subject.get("country")))),
             ("Industry:", _fmt_value(schema_subject.get("industry"))),
             ("Aliases:", _fmt_value(schema_subject.get("aliases", []))),
+            ("Known Associations:", _fmt_value(schema_subject.get("known_associations", []))),
+            ("Input Notes:", _fmt_value(schema_subject.get("input_notes"))),
         ]
         scope_pairs = [
             ("Jurisdiction:", _fmt_value(screening_scope.get("jurisdictions", []))),
-            ("Override:", "-"),
+            ("Languages:", _fmt_value(screening_scope.get("languages", []))),
+            ("Lookback Period (Years):", _fmt_value(screening_scope.get("lookback_period_years"))),
+            ("Search Queries:", _fmt_value(screening_scope.get("search_queries", []))),
+            ("Limitations:", _fmt_value(screening_scope.get("screening_limitations", []))),
         ]
+        coverage_notes = assessment.get("coverage_notes") or risk.get("summary", "")
 
         st.markdown(
             f"""
@@ -589,6 +601,7 @@ with left:
                 <div class="assessment-title">Assessment Summary</div>
               </div>
               <div class="assessment-summary">{html.escape(assessment.get('overall_summary', risk.get('summary', '')))}</div>
+              <div style='font-size:12px;color:#5f7798;margin:6px 0 14px 0;line-height:1.45;'>Coverage Notes: {html.escape(str(coverage_notes))}</div>
 
               <div class="assessment-columns">
                 <div>
@@ -736,48 +749,49 @@ with left:
     with t3:
                 rf_rows = []
                 for flag in risk_flags:
-                        rf_rows.append(
-                                "<tr>"
-                                f"<td class='rf-strong'>{html.escape(str(flag.get('flag_id', '')))}</td>"
-                                f"<td>{html.escape(str(flag.get('category', '')))}</td>"
-                                f"<td><span class='rf-badge rf-badge-high'><span>●</span>{html.escape(str(flag.get('severity', '')).title())}</span></td>"
-                                f"<td><span class='rf-badge rf-badge-status'>{html.escape(str(flag.get('status', '')).replace('_', '-'))}</span></td>"
-                                f"<td>{html.escape(str(flag.get('title', '')))}</td>"
-                                "</tr>"
-                        )
+                    category = str(flag.get("category", "")).replace("_", " ").title()
+                    rf_rows.append(
+                        "<tr>"
+                        f"<td class='rf-strong'>{html.escape(str(flag.get('flag_id', '')))}</td>"
+                        f"<td>{html.escape(category)}</td>"
+                        f"<td><span class='rf-badge rf-badge-high'><span>●</span>{html.escape(str(flag.get('severity', '')).title())}</span></td>"
+                        f"<td><span class='rf-badge rf-badge-status'>{html.escape(str(flag.get('status', '')).replace('_', '-'))}</span></td>"
+                        f"<td>{html.escape(str(flag.get('title', '')))}</td>"
+                        "</tr>"
+                    )
 
                 if not rf_rows:
-                        rf_rows = ["<tr><td colspan='5' style='text-align:center;color:#7f8b9b;'>No risk flags were generated.</td></tr>"]
+                    rf_rows = ["<tr><td colspan='5' style='text-align:center;color:#7f8b9b;'>No risk flags were generated.</td></tr>"]
 
                 st.markdown(
-                        f"""
-                        <div class='rf-shell'>
-                            <div class='rf-head'>
-                                <div class='rf-title-wrap'>
-                                    <span class='rf-icon'>⚑</span>
-                                    <span class='header-standard'>Risk Flags</span>
-                                </div>
-                                <span class='rf-viewall'>View all</span>
+                    f"""
+                    <div class='rf-shell'>
+                        <div class='rf-head'>
+                            <div class='rf-title-wrap'>
+                                <span class='rf-icon'>⚑</span>
+                                <span class='header-standard'>Risk Flags</span>
                             </div>
-                            <div class='rf-table-wrap'>
-                                <table class='rf-table'>
-                                    <thead>
-                                        <tr>
-                                            <th style='width:10%;'>Flag ID</th>
-                                            <th style='width:14%;'>Category</th>
-                                            <th style='width:10%;'>Severity</th>
-                                            <th style='width:12%;'>Status</th>
-                                            <th>Title</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {''.join(rf_rows)}
-                                    </tbody>
-                                </table>
-                            </div>
+                            <span class='rf-viewall'>View all</span>
                         </div>
-                        """,
-                        unsafe_allow_html=True,
+                        <div class='rf-table-wrap'>
+                            <table class='rf-table'>
+                                <thead>
+                                    <tr>
+                                        <th style='width:10%;'>Flag ID</th>
+                                        <th style='width:14%;'>Category</th>
+                                        <th style='width:10%;'>Severity</th>
+                                        <th style='width:12%;'>Status</th>
+                                        <th>Title</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {''.join(rf_rows)}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
                 )
 
                 method = html.escape(str(determination.get("method", "rule_based_v1")))
