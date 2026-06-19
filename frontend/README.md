@@ -87,6 +87,9 @@ Subject type mapping (UI label → API):
 | File | Role |
 |------|------|
 | `app.py` | Streamlit UI, runtime source selection |
+| `style_loader.py` | Loads `static/base.css` and `static/panels.css` |
+| `static/base.css` | App shell, sidebar, forms, tabs, responsive layout |
+| `static/panels.css` | Dashboard panel and table styles |
 | `api_client.py` | HTTP client for backend endpoints |
 | `env_shared.py` | Loads shared root/backend `.env` |
 | `report_adapter.py` | v1 report JSON → UI view model |
