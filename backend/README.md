@@ -9,6 +9,7 @@ cp .env.example .env   # from repo root; edit with your API keys
 
 cd backend
 pip install -r requirements.txt
+playwright install chromium
 uvicorn main:app --reload --port 8000
 ```
 

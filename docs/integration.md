@@ -112,7 +112,7 @@ The backend returns a **v1 reputational screening report** (see [`schemas/reputa
 
 The UI does not consume that schema directly. `frontend/report_adapter.py` maps it to a view model with:
 
-- `riskSummary`, `entityMatch`, `memo` (dashboard metrics)
+- `riskSummary`, `entityMatch`, `memo` (dashboard metrics; prefers optional `dashboard_summary` from the report when present)
 - `evidenceTable` (tabs)
 - `assessment`, `auditTrail`, `keyFindings`
 
@@ -126,9 +126,15 @@ For demos without API credits, set in repo root `.env`:
 USE_MOCK_DATA=true
 ```
 
-This loads `frontend/mock_data/mock_data.json` (v1-shaped sample).
+This loads `docs/examples/example-profile.json`.
 
-If `USE_MOCK_DATA` is unset, the UI calls `GET /health` first and falls back to mock data automatically when the backend is unreachable (including Streamlit Cloud with a localhost `BACKEND_URL`).
+### Runtime selection (when `USE_MOCK_DATA` is not forced)
+
+1. Call `GET {BACKEND_URL}/health` — if `status=ok`, use the full backend pipeline.
+2. If the backend is unreachable but `KIMI_API_KEY` and Bright Data SERP settings are configured, the UI uses **frontend live bypass** (Bright Data + Kimi via `frontend/services/`).
+3. Otherwise load `docs/examples/example-profile.json`.
+
+On Streamlit Cloud with a localhost `BACKEND_URL`, mock mode is forced automatically.
 
 Backend demo runs (no live APIs):
 
@@ -141,7 +147,7 @@ cd backend && python scripts/seed_demo.py
 
 The UI uses Python `urllib` from the Streamlit server process to call the API (server-side), not browser fetch — **CORS is not required** for the default setup.
 
-If you embed a browser SPA later, enable CORS on `backend/main.py` (already allows `*`).
+If you embed a browser SPA later, enable CORS on `backend/main.py` (localhost ports `8501` and `3000` are allowlisted).
 
 ## Ports
 

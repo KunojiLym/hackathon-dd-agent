@@ -15,16 +15,9 @@ Reports conform to [`docs/schemas/reputation-screening-report-rubric.schema.v1.j
 
 ## Quick start (full stack)
 
-Copy shared config once at the repo root:
-
 ```bash
 cp .env.example .env
-# Edit .env with your API keys
-```
 
-**Backend** (port 8000):
-
-```bash
 cd backend
 pip install -r requirements.txt
 playwright install chromium
@@ -42,7 +35,14 @@ streamlit run app.py --server.port 8501
 On **Windows PowerShell**, use `;` instead of `&&`, and `Copy-Item` instead of `cp`:
 
 ```powershell
-cd frontend
+Copy-Item .env.example .env
+
+cd backend
+pip install -r requirements.txt
+playwright install chromium
+python -m uvicorn main:app --reload --port 8000
+
+cd ..\frontend
 pip install -r requirements.txt
 streamlit run app.py --server.port 8501
 ```
@@ -57,7 +57,7 @@ curl -X POST http://localhost:8000/screen \
 
 Poll: `GET http://localhost:8000/screen/{run_id}`
 
-Mock UI only (no API): set `USE_MOCK_DATA=true` in `.env`.
+Mock UI only (no API): set `USE_MOCK_DATA=true` in `.env` (loads `docs/examples/example-profile.json`).
 
 ## API summary
 
@@ -97,11 +97,10 @@ hackathon-dd-agent/
 └── frontend/                        # Streamlit Risk Assistant UI
     ├── app.py
     ├── api_client.py                # calls backend /screen
-    ├── env_shared.py                # loads shared backend/.env
+    ├── env_shared.py                # loads root .env, backend/.env overrides
     ├── report_adapter.py            # v1 report → UI model
     ├── settings.py
-    ├── mock_data/mock_data.json
-    └── services/                    # helper service stubs
+    ├── services/                    # Bright Data + Kimi live bypass helpers
 ```
 
 ## Configuration

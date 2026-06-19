@@ -254,10 +254,7 @@ async def generate_sensenova_memo(run_id: str):
             logger.exception("[%s] Kimi fallback memo generation failed", run_id)
             raise HTTPException(
                 status_code=502,
-                detail=(
-                    "SenseNova failed and Kimi fallback failed. "
-                    f"SenseNova error: {exc}; Kimi error: {kimi_exc}"
-                ),
+                detail="Memo generation failed. Check server logs for details.",
             ) from kimi_exc
     except Exception as exc:
         msg = str(exc)
@@ -268,22 +265,16 @@ async def generate_sensenova_memo(run_id: str):
                 "run_id": run_id,
                 "source": "kimi",
                 "memo": memo,
-                "fallback_reason": msg,
+                "fallback_reason": "sensenova_failed",
             }
         except Exception as kimi_exc:
             logger.exception("[%s] Kimi fallback memo generation failed", run_id)
             if "Error code: 401" in msg or "Forbidden" in msg:
                 raise HTTPException(
                     status_code=401,
-                    detail=(
-                        "SenseNova authorization failed (401 Forbidden), and Kimi fallback failed. "
-                        f"Kimi error: {kimi_exc}"
-                    ),
+                    detail="SenseNova authorization failed and Kimi fallback failed.",
                 ) from kimi_exc
             raise HTTPException(
                 status_code=502,
-                detail=(
-                    "SenseNova request failed and Kimi fallback failed. "
-                    f"SenseNova error: {exc}; Kimi error: {kimi_exc}"
-                ),
+                detail="Memo generation failed. Check server logs for details.",
             ) from kimi_exc

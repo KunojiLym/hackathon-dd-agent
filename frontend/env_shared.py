@@ -8,9 +8,8 @@ _BACKEND_ENV_FILE = _REPO_ROOT / "backend" / ".env"
 
 
 def load_shared_env() -> None:
-    # Prefer repository root .env for Streamlit/local runs, while keeping
-    # backend/.env as a compatibility fallback for older setups.
+    # Match backend/config.py: root .env first, then backend/.env overrides.
     if _ROOT_ENV_FILE.exists():
         load_dotenv(_ROOT_ENV_FILE, override=False)
     if _BACKEND_ENV_FILE.exists():
-        load_dotenv(_BACKEND_ENV_FILE, override=False)
+        load_dotenv(_BACKEND_ENV_FILE, override=True)

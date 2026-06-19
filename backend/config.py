@@ -128,8 +128,10 @@ class Settings(BaseSettings):
 
     @property
     def sensenova_configured(self) -> bool:
-        return bool(self.sensenova_api_key) and bool(self.sensenova_base_url) and bool(
-            self.sensenova_model
+        return (
+            _is_real_api_key(self.sensenova_api_key)
+            and bool(self.sensenova_base_url)
+            and bool(self.sensenova_model)
         )
 
     @property

@@ -804,7 +804,7 @@ def assemble_report(checkpoint4: dict) -> ReputationScreeningReport:
 
     report = ReputationScreeningReport(
         report_metadata=ReportMetadata(
-            report_id=f"RSR-{run_id}",
+            report_id=run_id,
             generated_at=datetime.now(timezone.utc).isoformat(),
             agent_version=settings.agent_version,
             workflow_run_id=run_id,

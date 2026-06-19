@@ -125,68 +125,70 @@ def _backend_url() -> str:
     return url.rstrip("/")
 
 
+def _set_mock_mode(message: str) -> None:
+    st.session_state.effective_use_mock_data = True
+    st.session_state.backend_available = False
+    st.session_state.frontend_live_mode = False
+    st.session_state.backend_status_message = message
+
+
+def _set_backend_mode(backend_url: str, health: dict) -> None:
+    st.session_state.effective_use_mock_data = False
+    st.session_state.backend_available = True
+    st.session_state.frontend_live_mode = False
+    secrets = health.get("secrets", {}) if isinstance(health, dict) else {}
+    if isinstance(secrets, dict):
+        st.session_state.kimi_api_key_set = bool(secrets.get("kimi"))
+        st.session_state.daytona_api_key_set = bool(secrets.get("daytona"))
+    st.session_state.backend_status_message = f"Connected to API at {backend_url}."
+
+
+def _set_frontend_live_bypass(message: str) -> None:
+    st.session_state.effective_use_mock_data = False
+    st.session_state.backend_available = False
+    st.session_state.frontend_live_mode = True
+    st.session_state.kimi_api_key_set = True
+    st.session_state.backend_status_message = message
+
+
 def _resolve_data_source() -> None:
     backend_url = _backend_url()
     host = (urlparse(backend_url).hostname or "").lower()
     localhost_backend = host in {"127.0.0.1", "localhost"}
 
-    if _frontend_live_configured():
-        st.session_state.effective_use_mock_data = False
-        st.session_state.backend_available = False
-        st.session_state.frontend_live_mode = True
-        st.session_state.kimi_api_key_set = True
-        st.session_state.backend_status_message = (
-            "Live mode connected."
-        )
-        return
-
     if SETTINGS.get("use_mock_data_forced_by_cloud_localhost") and localhost_backend:
-        st.session_state.effective_use_mock_data = True
-        st.session_state.backend_available = False
-        st.session_state.frontend_live_mode = False
-        st.session_state.backend_status_message = (
+        _set_mock_mode(
             "Mock mode forced: BACKEND_URL points to localhost on Streamlit Cloud. "
             "Set BACKEND_URL to a public API URL for live screening."
         )
         return
 
     if SETTINGS["use_mock_data"]:
-        st.session_state.effective_use_mock_data = True
-        st.session_state.backend_available = False
-        st.session_state.frontend_live_mode = False
-        st.session_state.backend_status_message = "Mock mode forced by USE_MOCK_DATA=true."
+        _set_mock_mode("Mock mode forced by USE_MOCK_DATA=true.")
         return
 
+    backend_error = "API health check did not return status=ok"
     try:
         health = get_health(backend_url)
         if health.get("status") == "ok":
-            st.session_state.effective_use_mock_data = False
-            st.session_state.backend_available = True
-            st.session_state.frontend_live_mode = False
-            secrets = health.get("secrets", {}) if isinstance(health, dict) else {}
-            if isinstance(secrets, dict):
-                st.session_state.kimi_api_key_set = bool(secrets.get("kimi"))
-                st.session_state.daytona_api_key_set = bool(secrets.get("daytona"))
-            st.session_state.backend_status_message = f"Connected to API at {backend_url}."
+            _set_backend_mode(backend_url, health)
             return
-        st.session_state.effective_use_mock_data = True
-        st.session_state.backend_available = False
-        st.session_state.backend_status_message = (
-            "API health check did not return status=ok; using mock data."
-        )
     except Exception as exc:
-        st.session_state.effective_use_mock_data = True
-        st.session_state.backend_available = False
-        st.session_state.backend_status_message = (
-            f"Could not reach API at {backend_url}; using mock data ({exc})."
+        backend_error = str(exc)
+
+    if _frontend_live_configured():
+        _set_frontend_live_bypass(
+            f"Backend unavailable ({backend_error}); using frontend live bypass (Bright Data + Kimi)."
         )
+        return
+
+    _set_mock_mode(
+        f"Backend unavailable ({backend_error}); loaded example profile (no live bypass keys configured)."
+    )
 
 
 def _fallback_to_mock(reason: str) -> None:
-    st.session_state.effective_use_mock_data = True
-    st.session_state.backend_available = False
-    st.session_state.frontend_live_mode = False
-    st.session_state.backend_status_message = f"Live API unavailable; using mock data ({reason})."
+    _set_mock_mode(f"Live API unavailable; using example profile ({reason}).")
 
 
 def _frontend_live_configured() -> bool:
@@ -276,7 +278,7 @@ def _run_frontend_live_screening(
     )
 
     now = datetime.now(timezone.utc).isoformat()
-    synthetic_id = f"ID-{int(time.time())}"
+    synthetic_id = f"LIVE-{int(time.time())}"
     ui.setdefault("reportMetadata", {})
     ui["reportMetadata"].update(
         {
@@ -298,6 +300,7 @@ def _run_frontend_live_screening(
             "memo": ui["memo"]["body"],
         }
     )
+    ui["assessment"] = dict(ui["assessmentRaw"])
     ui["riskFlags"] = [
         {
             "title": f.get("title", "Potential reputational signal"),
@@ -354,10 +357,7 @@ def _poll_if_needed() -> None:
             st.rerun()
     except Exception as exc:
         st.session_state.polling = False
-        _fallback_to_mock(str(exc))
-        st.session_state.ui_data = load_report_from_path(DEFAULT_DATA_PATH)
-        st.session_state.last_success = "Live API became unavailable during polling. Loaded mock data instead."
-        st.rerun()
+        st.error(f"Could not poll backend for run {run_id}: {exc}")
 
 
 _init_state()
@@ -847,14 +847,58 @@ with st.container(border=True):
         run = st.button("Run Screening", use_container_width=True)
 
 if run:
-    # Re-check backend right before submitting to handle cases where API became unavailable
-    # after initial page load.
     if not SETTINGS["use_mock_data"]:
         _resolve_data_source()
 
-    if st.session_state.get("frontend_live_mode") or _frontend_live_configured():
+    if st.session_state.backend_available:
+        if not subject_name.strip():
+            st.error("Subject name is required.")
+        else:
+            try:
+                notes = []
+                if purpose:
+                    notes.append(f"Purpose: {purpose}")
+                if role.strip():
+                    notes.append(f"Role: {role.strip()}")
+                payload = build_screen_request(
+                    subject_name, subject_type, country, input_notes="; ".join(notes) if notes else None
+                )
+                run_id = start_screening(_backend_url(), payload)
+                st.session_state.active_run_id = run_id
+                st.session_state.polling = True
+                st.session_state.poll_deadline = time.time() + SETTINGS["poll_timeout_seconds"]
+                st.session_state.last_poll_time = 0.0
+                st.session_state.clarification_pending = None
+                st.rerun()
+            except Exception as exc:
+                if _frontend_live_configured():
+                    try:
+                        with st.spinner("Backend unavailable; running frontend live bypass..."):
+                            st.session_state.ui_data = _run_frontend_live_screening(
+                                subject_name=subject_name,
+                                subject_type=subject_type,
+                                country=country,
+                                purpose=purpose,
+                                role=role,
+                            )
+                        _set_frontend_live_bypass(
+                            f"Backend submit failed ({exc}); completed via frontend live bypass."
+                        )
+                        st.session_state.last_success = "Frontend live bypass screening complete."
+                        st.rerun()
+                    except Exception as live_exc:
+                        _fallback_to_mock(str(live_exc))
+                        st.session_state.ui_data = load_report_from_path(DEFAULT_DATA_PATH)
+                        st.session_state.last_success = "Backend and frontend live bypass failed. Loaded example profile."
+                        st.rerun()
+                else:
+                    _fallback_to_mock(str(exc))
+                    st.session_state.ui_data = load_report_from_path(DEFAULT_DATA_PATH)
+                    st.session_state.last_success = "Backend unavailable. Loaded example profile."
+                    st.rerun()
+    elif st.session_state.frontend_live_mode or _frontend_live_configured():
         try:
-            with st.spinner("Running live screening via Bright Data + Kimi..."):
+            with st.spinner("Running frontend live bypass (Bright Data + Kimi)..."):
                 st.session_state.ui_data = _run_frontend_live_screening(
                     subject_name=subject_name,
                     subject_type=subject_type,
@@ -862,48 +906,25 @@ if run:
                     purpose=purpose,
                     role=role,
                 )
-            st.session_state.frontend_live_mode = True
-            st.session_state.effective_use_mock_data = False
-            st.session_state.backend_available = False
-            st.session_state.backend_status_message = "Live mode connected."
-            st.session_state.last_success = "Live frontend screening complete."
+            _set_frontend_live_bypass("Frontend live bypass connected.")
+            st.session_state.last_success = "Frontend live bypass screening complete."
             st.rerun()
         except Exception as exc:
-            st.session_state.frontend_live_mode = False
             _fallback_to_mock(str(exc))
             st.session_state.ui_data = load_report_from_path(DEFAULT_DATA_PATH)
-            st.session_state.last_success = "Live frontend mode failed. Loaded mock data instead."
+            st.session_state.last_success = "Frontend live bypass failed. Loaded example profile."
             st.rerun()
     elif st.session_state.effective_use_mock_data:
-        if _frontend_live_configured():
-            st.session_state.frontend_live_mode = True
-            st.rerun()
-        else:
-            st.session_state.ui_data = load_report_from_path(DEFAULT_DATA_PATH)
-            st.session_state.last_success = "Loaded mock data. Add KIMI_API_KEY + Bright Data config for live mode."
-            st.rerun()
+        st.session_state.ui_data = load_report_from_path(DEFAULT_DATA_PATH)
+        st.session_state.last_success = "Loaded example profile."
+        st.rerun()
     elif not subject_name.strip():
         st.error("Subject name is required.")
     else:
-        try:
-            notes = []
-            if purpose:
-                notes.append(f"Purpose: {purpose}")
-            if role.strip():
-                notes.append(f"Role: {role.strip()}")
-            payload = build_screen_request(subject_name, subject_type, country, input_notes="; ".join(notes) if notes else None)
-            run_id = start_screening(_backend_url(), payload)
-            st.session_state.active_run_id = run_id
-            st.session_state.polling = True
-            st.session_state.poll_deadline = time.time() + SETTINGS["poll_timeout_seconds"]
-            st.session_state.last_poll_time = 0.0
-            st.session_state.clarification_pending = None
-            st.rerun()
-        except Exception as exc:
-            _fallback_to_mock(str(exc))
-            st.session_state.ui_data = load_report_from_path(DEFAULT_DATA_PATH)
-            st.session_state.last_success = "Live API unavailable. Loaded mock data instead."
-            st.rerun()
+        _fallback_to_mock("No backend or live bypass path available.")
+        st.session_state.ui_data = load_report_from_path(DEFAULT_DATA_PATH)
+        st.session_state.last_success = "Loaded example profile."
+        st.rerun()
 
 if st.session_state.get("clarification_pending"):
     clar = st.session_state.clarification_pending
@@ -942,11 +963,7 @@ if st.session_state.get("clarification_pending"):
             st.session_state.last_poll_time = 0.0
             st.rerun()
         except Exception as exc:
-            _fallback_to_mock(str(exc))
-            st.session_state.ui_data = load_report_from_path(DEFAULT_DATA_PATH)
-            st.session_state.clarification_pending = None
-            st.session_state.last_success = "Live API unavailable during clarification. Loaded mock data instead."
-            st.rerun()
+            st.error(f"Clarification submit failed: {exc}")
 
 if st.session_state.get("last_success"):
     st.success(st.session_state.last_success)
@@ -1433,11 +1450,11 @@ with left:
 with right:
     subject_name_display = schema_subject.get("primary_name", subject.get("name", ""))
     disposition_display = _format_disposition(assessment.get("recommended_disposition") or risk.get("recommendation", ""))
-    disposition_rationale = assessment.get("disposition_rationale", determination.get("rationale", ""))
+    disposition_rationale = assessment.get("disposition_rationale", "")
     memo_body = memo.get("body", "")
     memo_snippet = html.escape(memo_body[:300]).replace("\n", "<br>") if memo_body else ""
     workflow_run_id = st.session_state.active_run_id or report_metadata.get("workflow_run_id")
-    has_real_backend_run = bool(workflow_run_id) and not str(workflow_run_id).startswith("WF-")
+    has_real_backend_run = bool(workflow_run_id) and not str(workflow_run_id).startswith(("WF-", "LIVE-"))
 
     st.markdown(
         f"""

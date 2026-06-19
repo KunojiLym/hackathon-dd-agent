@@ -49,7 +49,7 @@ def get_frontend_settings() -> dict:
         "use_mock_data": configured_mock or auto_mock_on_cloud_localhost,
         "use_mock_data_forced_by_cloud_localhost": auto_mock_on_cloud_localhost,
         "poll_interval_seconds": float(_get_config_value("POLL_INTERVAL_SECONDS", "5")),
-        "poll_timeout_seconds": float(_get_config_value("POLL_TIMEOUT_SECONDS", "300")),
+        "poll_timeout_seconds": float(_get_config_value("POLL_TIMEOUT_SECONDS", "900")),
         "kimi_api_key_set": bool(_get_config_value("KIMI_API_KEY", "")),
         "daytona_api_key_set": bool(_get_config_value("DAYTONA_API_KEY", "")),
     }

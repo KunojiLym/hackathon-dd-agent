@@ -43,7 +43,7 @@ Report output conforms to [`schemas/reputation-screening-report-rubric.schema.v1
       └────────────┘   └────────────┘    └────────────────────┘
 ```
 
-The pipeline is exposed as two HTTP endpoints: a `POST /screen` that accepts subject input and immediately returns a `run_id`, and a `GET /screen/{run_id}` that returns current status and, when complete, the final report JSON. This pattern keeps the frontend responsive and decouples the long-running pipeline from the HTTP request lifecycle.[3][4]
+The pipeline is exposed over five HTTP endpoints: `GET /health`, `POST /screen`, `GET /screen/{run_id}`, `POST /screen/{run_id}/clarify`, and `POST /screen/{run_id}/memo/sensenova`. The frontend polls `GET /screen/{run_id}` until the run completes, pauses for clarification, or errors.[3][4]
 
 ***
 
@@ -70,7 +70,7 @@ Generate at minimum:
 
 Vary queries across `site:` constraints if relevant (e.g., `site:reuters.com`, `site:straitstimes.com`).
 
-**Checkpoint output (`checkpoint_1.json`):**
+**Checkpoint output (`checkpoint_subject_prep.json`):**
 
 ```json
 {
@@ -137,42 +137,38 @@ Resolution data is an orchestration artifact only — no v1 report schema change
 
 **Responsibility:** Execute searches and fetch article content. Return raw text items.
 
-**Tools used:** Bright Data SERP API + Web Unlocker API.[7][8]
+**Tools used:** Bright Data SERP API (via `/request` + zone) and **Browser API** (Playwright CDP through `browser_fetch.py`).[7][8]
 
 **Two-call pattern per query:**
 
-1. **SERP call** — submit the search query, receive a list of results (title, URL, snippet, date).[8]
-2. **Unlocker call** — for each result above a relevance threshold, fetch the full page in Markdown format for downstream processing.[7]
+1. **SERP call** — submit the search query through the Bright Data request endpoint with your SERP zone; receive organic results (title, URL, snippet, date).[8]
+2. **Browser fetch** — for each result above a relevance threshold, fetch the full page via Playwright CDP (Browser API zone credentials).[7]
 
 Fetching everything is wasteful and slow. A practical filter for a hackathon demo: only fetch full content for results where the snippet contains at least one adverse keyword (fraud, investigation, corruption, sanction, regulatory, court, conviction, allegation, lawsuit).[9][7]
 
-**Python sketch:**
+**Python sketch (matches `stage2_collect.py`):**
 
 ```python
-import requests
+import httpx
 
 BRIGHT_DATA_TOKEN = "..."
-SERP_URL = "https://api.brightdata.com/serp/google/search"
-UNLOCKER_URL = "https://api.brightdata.com/request"
+REQUEST_URL = "https://api.brightdata.com/request"
+SERP_ZONE = "serp_api"
 
-def search_serp(query: str, num_results: int = 10) -> list[dict]:
-    resp = requests.post(
-        SERP_URL,
+def search_serp(query: str, gl: str = "sg", num_results: int = 10) -> list[dict]:
+    google_url = f"https://www.google.com/search?q={query}&gl={gl}&num={num_results}"
+    resp = httpx.post(
+        REQUEST_URL,
         headers={"Authorization": f"Bearer {BRIGHT_DATA_TOKEN}"},
-        json={"q": query, "gl": "sg", "num": num_results}
+        json={"zone": SERP_ZONE, "url": google_url, "format": "raw"},
+        timeout=60,
     )
     resp.raise_for_status()
-    return resp.json().get("organic", [])
-
-def fetch_page(url: str) -> str:
-    resp = requests.post(
-        UNLOCKER_URL,
-        headers={"Authorization": f"Bearer {BRIGHT_DATA_TOKEN}"},
-        json={"zone": "unlocker", "url": url, "format": "markdown"}
-    )
-    resp.raise_for_status()
-    return resp.text
+    # Parse organic results from response payload
+    ...
 ```
+
+Full-page fetch uses `stages/browser_fetch.py` with `BRIGHT_DATA_BROWSER_USERNAME` / `BRIGHT_DATA_BROWSER_PASSWORD`.
 
 **Error handling:**
 
@@ -182,7 +178,7 @@ Bright Data calls can fail due to rate limits, blocked domains, or timeouts. Wra
 
 SERP results across multiple queries will overlap. Deduplicate by URL before fetching. A `seen_urls` set is sufficient for the hackathon.[5]
 
-**Checkpoint output (`checkpoint_2.json`):**
+**Checkpoint output (`checkpoint_data_collection.json`):**
 
 ```json
 {
@@ -259,25 +255,9 @@ def process_in_sandbox(raw_items: list[dict], subject: dict) -> list[dict]:
    - Truncate content to ≤500 tokens per item to keep LLM context manageable
 3. Write `processed_items.json`
 
-**Source-tier domain lists** should be defined as configuration, not hardcoded. A minimal starter list:[14][15]
+**Source-tier domain lists** are loaded from `backend/config/source_tiers.json` (not hardcoded in `process.py`).
 
-```python
-TIER_1_DOMAINS = [
-    "reuters.com", "bloomberg.com", "ft.com", "wsj.com",
-    "straitstimes.com", "channelnewsasia.com",
-    "mas.gov.sg", "acra.gov.sg", "ojk.go.id",  # regulators
-    "sgdi.gov.sg", "judiciary.gov.sg"
-]
-
-TIER_2_DOMAINS = [
-    "businesstimes.com.sg", "theedgesingapore.com",
-    "asiaone.com", "todayonline.com",
-    "insurancejournal.com", "risk.net"
-]
-# All others default to Tier 3
-```
-
-**Checkpoint output (`checkpoint_3.json`):**
+**Checkpoint output (`checkpoint_sandbox_processing.json`):**
 
 ```json
 {
@@ -309,7 +289,7 @@ TIER_2_DOMAINS = [
 
 **Responsibility:** Classify each processed evidence item using the defined rubric. The model does NOT determine the overall risk level — that is the rule engine's job.
 
-**Providers:** Configured via `LLM_PROVIDER` in `backend/.env`. Default is **TokenRouter** at `https://api.tokenrouter.com/v1` using the OpenAI `chat.completions` API (model `MiniMax-M3`). Alternatives: OpenRouter (`minimax-v3`) or direct Kimi (`moonshotai/Kimi-K2-Instruct`).[16][17]
+**Providers:** Configured via `LLM_PROVIDER` in the shared `.env` (root first, `backend/.env` overrides). Default is **TokenRouter** at `https://api.tokenrouter.com/v1` using the OpenAI `chat.completions` API (model `MiniMax-M3`). Alternatives: OpenRouter (`minimax-v3`) or direct Kimi (`moonshot-v1-auto` default).[16][17]
 
 **Batching:** Large evidence sets are classified in batches (default 5 items per call) to avoid truncated JSON responses.
 
@@ -381,7 +361,7 @@ def classify_evidence_items(processed_items: list[dict], subject: dict) -> list[
     subject_json = json.dumps(subject, indent=2)
 
     response = client.chat.completions.create(
-        model="moonshotai/Kimi-K2-Instruct",
+        model="moonshot-v1-auto",
         messages=[
             {"role": "system", "content": SYSTEM_PROMPT},
             {
@@ -447,7 +427,7 @@ class EvidenceRubric(BaseModel):
     justification: str
 ```
 
-**Checkpoint output (`checkpoint_4.json`):**
+**Checkpoint output (`checkpoint_llm_reasoning.json`):**
 
 The rubric classifications, merged back with the processed item metadata. At this stage the JSON schema's `rubric_assessment` block per evidence item is populated.
 
@@ -734,6 +714,10 @@ A key principle for serial pipelines: run Bright Data queries in parallel (one a
 backend/
 ├── main.py                  # FastAPI app, endpoints
 ├── orchestrator.py          # run_pipeline, run_or_load, stage dispatch
+├── source_config.py         # Adverse keywords + source tier JSON loader
+├── config/
+│   ├── source_tiers.json    # Tier 1/2 domain lists for sandbox processing
+│   └── rules_v1.json        # Rule metadata (reference)
 ├── stages/
 │   ├── stage1_subject.py    # Subject prep and query generation
 │   ├── stage1b_resolve.py   # Entity resolution + clarification gate
@@ -783,7 +767,7 @@ There are three layers to manage: your **local dev machine**, the **Daytona work
 
 ### Layer 1 — Local dev (`.env` file + `pydantic-settings`)
 
-Keep a `.env` file that never gets committed (add it to `.gitignore`). Copy from `.env.example` at the repo root. Settings load from **repository root `.env` first**, then `backend/.env` as a fallback — both backend and frontend use this shared file via `backend/config.py` and `frontend/env_shared.py`. [fastapi.tiangolo](https://fastapi.tiangolo.com/advanced/settings/)
+Keep a `.env` file that never gets committed (add it to `.gitignore`). Copy from `.env.example` at the repo root. Settings load from **repository root `.env` first**, then `backend/.env` overrides — both backend and frontend use this shared file via `backend/config.py` and `frontend/env_shared.py`. [fastapi.tiangolo](https://fastapi.tiangolo.com/advanced/settings/)
 
 ```bash
 cp .env.example .env   # never commit .env

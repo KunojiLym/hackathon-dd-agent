@@ -25,13 +25,19 @@ def _process_locally(raw_items: list[dict], subject: dict) -> dict:
 
 
 def _process_in_daytona(raw_items: list[dict], subject: dict) -> dict:
-    from daytona_sdk import Daytona
-
     settings = get_settings()
 
+    def _legacy_daytona():
+        from daytona_sdk import CreateSandboxParams, Daytona
+
+        client = Daytona(api_key=settings.daytona_api_key)
+        return client, client.create(CreateSandboxParams(language="python"))
+
+    sandbox = None
+    daytona = None
+
     try:
-        # Newer SDK style: Daytona(DaytonaConfig(...)) + CreateWorkspaceParams
-        from daytona_sdk import CreateWorkspaceParams, DaytonaConfig
+        from daytona_sdk import CreateWorkspaceParams, Daytona, DaytonaConfig
 
         if not settings.daytona_server_url:
             raise RuntimeError("DAYTONA_SERVER_URL is required for current daytona-sdk")
@@ -45,11 +51,15 @@ def _process_in_daytona(raw_items: list[dict], subject: dict) -> dict:
         )
         sandbox = daytona.create(CreateWorkspaceParams(language="python"))
     except ImportError:
-        # Legacy SDK style kept for backwards compatibility.
-        from daytona_sdk import CreateSandboxParams
-
-        daytona = Daytona(api_key=settings.daytona_api_key)
-        sandbox = daytona.create(CreateSandboxParams(language="python"))
+        daytona, sandbox = _legacy_daytona()
+    except Exception as exc:
+        logger.warning("Daytona new SDK failed (%s); trying legacy SDK", exc)
+        try:
+            daytona, sandbox = _legacy_daytona()
+        except Exception as legacy_exc:
+            raise RuntimeError(
+                f"Daytona new SDK failed ({exc}); legacy SDK failed ({legacy_exc})"
+            ) from legacy_exc
 
     try:
         sandbox.fs.upload_file("process.py", PROCESS_SCRIPT.read_bytes())
@@ -66,7 +76,8 @@ def _process_in_daytona(raw_items: list[dict], subject: dict) -> dict:
         output = sandbox.fs.download_file("processed_items.json")
         return json.loads(output)
     finally:
-        daytona.remove(sandbox)
+        if daytona is not None and sandbox is not None:
+            daytona.remove(sandbox)
 
 
 def run_stage3(checkpoint2: dict) -> dict:
