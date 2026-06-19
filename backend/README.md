@@ -6,7 +6,6 @@ FastAPI backend for the Agent Forge hackathon reputational screening agent.
 
 ```bash
 cd backend
-cp .env.example .env
 # Edit .env with your API keys
 
 pip install -r requirements.txt
@@ -21,6 +20,7 @@ uvicorn main:app --reload --port 8000
 | `POST /screen` | Start screening run, returns `{run_id, status}` |
 | `GET /screen/{run_id}` | Poll status; returns full report when complete or clarification form when paused |
 | `POST /screen/{run_id}/clarify` | Submit analyst clarification to resume a paused run |
+| `POST /screen/{run_id}/memo/sensenova` | Generate full memo via SenseNova, with automatic fallback to Kimi |
 
 ### Status lifecycle
 
@@ -90,15 +90,15 @@ Returns `{run_id, status: "running", stage: "entity_resolution"}`. Poll `GET /sc
 1. **Subject prep** — normalize input, generate provisional search queries
 1.5. **Entity resolution** — hybrid SERP + LLM discovery; pause for clarification when ambiguity is high
 2. **Bright Data** — SERP API + Browser API (Playwright) for full-page fetch
-3. **Daytona sandbox** — text cleaning, source tier classification (local fallback)
-4. **LLM (Stage 4)** — rubric classification via TokenRouter (default, MiniMax v3), OpenRouter, or direct Kimi API
+3. **Daytona Sandbox** — isolated container runtime for text cleaning and source tier classification (local fallback for development)
+4. **LLM (Stage 4)** — Kimi-based rubric classification (TokenRouter/OpenRouter are also supported via env)
 5. **Rule engine** — deterministic support bands, risk level, disposition
 
 Each stage checkpoints to `runs/{run_id}/`. Entity resolution artifacts: `checkpoint_entity_resolution.json` + `clarification` block in `status.json`.
 
 ## Environment variables
 
-See `.env.example`. Bright Data free tier setup:
+See `backend/.env`. Bright Data free tier setup:
 
 - `BRIGHT_DATA_API_KEY` — account API key for SERP API (`/request` endpoint)
 - `BRIGHT_DATA_SERP_ZONE` — SERP API zone name
@@ -124,6 +124,15 @@ LLM Stage 4 providers (`LLM_PROVIDER`):
 | `tokenrouter` (default) | `TOKENROUTER_API_KEY` | `TOKENROUTER_MODEL=MiniMax-M3` |
 | `openrouter` | `OPENROUTER_API_KEY` | `OPENROUTER_MODEL=minimax-v3` |
 | `kimi` | `KIMI_API_KEY` + `KIMI_BASE_URL` | `KIMI_MODEL` |
+
+Stage 5 supports memo generation via SenseNova with automatic fallback to Kimi:
+
+- `SENSENOVA_API_KEY`
+- `SENSENOVA_BASE_URL` (default: `https://api.sensenova.cn/compatible-mode/v1`)
+- `SENSENOVA_MODEL` (default: `SenseNova-5`)
+
+If SenseNova is unavailable or returns an error, the API memo endpoint falls back to Kimi generation.
+If both SenseNova and Kimi fail, the endpoint returns an error with both failure details.
 
 ## Demo replay (no API credits)
 

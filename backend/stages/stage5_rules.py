@@ -5,12 +5,18 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
+from openai import OpenAI
+
 from config import get_settings
+from logging_config import get_logger
+
+logger = get_logger(__name__)
 from schemas.report import (
     AnalystChecklistItem,
     Assessment,
     AuditTrail,
     ComponentScales,
+    DashboardSummary,
     DeterminationBasis,
     EvidenceItem,
     EvidenceClassification,
@@ -278,6 +284,228 @@ def _build_memo(
     return "\n".join(lines)
 
 
+def _build_sensenova_memo_prompt(
+    subject: Subject,
+    overall_summary: str,
+    disposition: str,
+    disposition_rationale: str,
+    support_summary: dict,
+    triggered_rules: list[str],
+    risk_flags: list[RiskFlag],
+    deterministic_memo: str,
+) -> tuple[str, str]:
+    system_prompt = (
+        "You write compliance memos for a reputational screening workflow. "
+        "Preserve the facts and disposition in the provided draft. "
+        "Return plain text only, without markdown fences or bullet rewrites that add new facts."
+    )
+    triggered_rule_lines = [f"- {rule}" for rule in triggered_rules[:8]] or ["- None"]
+    risk_flag_lines = [
+        f"- [{flag.severity.value}] {flag.title}: {flag.description[:240]}"
+        for flag in risk_flags[:5]
+    ] or ["- None"]
+    user_prompt = "\n".join(
+        [
+            f"Subject: {subject.primary_name}",
+            f"Type: {subject.subject_type.value}",
+            f"Country: {subject.country or 'N/A'}",
+            f"Industry: {subject.industry or 'N/A'}",
+            "",
+            f"Overall summary: {overall_summary}",
+            f"Recommended disposition: {disposition.replace('_', ' ').title()}",
+            f"Disposition rationale: {disposition_rationale}",
+            "",
+            "Support summary:",
+            (
+                f"High-support evidence: {support_summary.get('high_support_evidence_count', 0)}; "
+                f"Medium-support: {support_summary.get('medium_support_evidence_count', 0)}; "
+                f"Low-support: {support_summary.get('low_support_evidence_count', 0)}; "
+                f"Material categories: {support_summary.get('material_category_count', 0)}; "
+                f"Tier-1 hits: {support_summary.get('official_or_tier_1_hits', 0)}."
+            ),
+            "",
+            "Triggered rules:",
+            *triggered_rule_lines,
+            "",
+            "Key risk flags:",
+            *risk_flag_lines,
+            "",
+            "Draft memo to polish:",
+            deterministic_memo,
+        ]
+    )
+    return system_prompt, user_prompt
+
+
+def _maybe_generate_sensenova_memo(
+    subject: Subject,
+    overall_summary: str,
+    disposition: str,
+    disposition_rationale: str,
+    support_summary: dict,
+    triggered_rules: list[str],
+    risk_flags: list[RiskFlag],
+    deterministic_memo: str,
+    strict: bool = False,
+) -> str:
+    settings = get_settings()
+    if not settings.sensenova_configured:
+        if strict:
+            raise RuntimeError(
+                "SenseNova is not configured. Set SENSENOVA_API_KEY, SENSENOVA_BASE_URL, and SENSENOVA_MODEL."
+            )
+        return deterministic_memo
+
+    system_prompt, user_prompt = _build_sensenova_memo_prompt(
+        subject,
+        overall_summary,
+        disposition,
+        disposition_rationale,
+        support_summary,
+        triggered_rules,
+        risk_flags,
+        deterministic_memo,
+    )
+
+    client = OpenAI(
+        base_url=settings.sensenova_base_url,
+        api_key=settings.sensenova_api_key,
+    )
+
+    try:
+        response = client.chat.completions.create(
+            model=settings.sensenova_model,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=0.2,
+            max_tokens=settings.llm_max_output_tokens,
+        )
+        content = (response.choices[0].message.content or "").strip()
+        if not content:
+            raise RuntimeError("SenseNova returned an empty memo")
+        logger.info("SenseNova memo generation succeeded model=%s", settings.sensenova_model)
+        return content
+    except Exception:
+        if strict:
+            raise
+        logger.exception(
+            "SenseNova memo generation failed model=%s; using deterministic memo",
+            settings.sensenova_model,
+        )
+        return deterministic_memo
+
+
+def generate_sensenova_memo_from_report(report_dict: dict) -> str:
+    """Generate a memo from an existing final report using SenseNova only (no fallback)."""
+    report = ReputationScreeningReport.model_validate(report_dict)
+    assessment = report.assessment
+    determination = assessment.determination_basis
+    support_summary = determination.support_summary.model_dump(mode="json")
+    triggered_rules = determination.triggered_rules
+
+    deterministic_memo = assessment.memo or _build_memo(
+        report.subject,
+        assessment.overall_summary,
+        assessment.recommended_disposition.value,
+        assessment.disposition_rationale,
+        support_summary,
+        triggered_rules,
+        report.risk_flags,
+    )
+
+    return _maybe_generate_sensenova_memo(
+        report.subject,
+        assessment.overall_summary,
+        assessment.recommended_disposition.value,
+        assessment.disposition_rationale,
+        support_summary,
+        triggered_rules,
+        report.risk_flags,
+        deterministic_memo,
+        strict=True,
+    )
+
+
+def _generate_kimi_memo(
+    subject: Subject,
+    overall_summary: str,
+    disposition: str,
+    disposition_rationale: str,
+    support_summary: dict,
+    triggered_rules: list[str],
+    risk_flags: list[RiskFlag],
+    deterministic_memo: str,
+) -> str:
+    settings = get_settings()
+    if not settings.kimi_api_key or not settings.kimi_base_url or not settings.kimi_model:
+        raise RuntimeError(
+            "Kimi is not configured. Set KIMI_API_KEY, KIMI_BASE_URL, and KIMI_MODEL."
+        )
+
+    system_prompt, user_prompt = _build_sensenova_memo_prompt(
+        subject,
+        overall_summary,
+        disposition,
+        disposition_rationale,
+        support_summary,
+        triggered_rules,
+        risk_flags,
+        deterministic_memo,
+    )
+
+    client = OpenAI(
+        base_url=settings.kimi_base_url,
+        api_key=settings.kimi_api_key,
+    )
+
+    response = client.chat.completions.create(
+        model=settings.kimi_model,
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        temperature=0.2,
+        max_tokens=settings.llm_max_output_tokens,
+    )
+    content = (response.choices[0].message.content or "").strip()
+    if not content:
+        raise RuntimeError("Kimi returned an empty memo")
+    logger.info("Kimi memo generation succeeded model=%s", settings.kimi_model)
+    return content
+
+
+def generate_kimi_memo_from_report(report_dict: dict) -> str:
+    """Generate a memo from an existing final report using Kimi only."""
+    report = ReputationScreeningReport.model_validate(report_dict)
+    assessment = report.assessment
+    determination = assessment.determination_basis
+    support_summary = determination.support_summary.model_dump(mode="json")
+    triggered_rules = determination.triggered_rules
+
+    deterministic_memo = assessment.memo or _build_memo(
+        report.subject,
+        assessment.overall_summary,
+        assessment.recommended_disposition.value,
+        assessment.disposition_rationale,
+        support_summary,
+        triggered_rules,
+        report.risk_flags,
+    )
+
+    return _generate_kimi_memo(
+        report.subject,
+        assessment.overall_summary,
+        assessment.recommended_disposition.value,
+        assessment.disposition_rationale,
+        support_summary,
+        triggered_rules,
+        report.risk_flags,
+        deterministic_memo,
+    )
+
+
 def _build_risk_flags(
     evidence: list[EvidenceItem],
     support_bands: dict[str, str],
@@ -503,6 +731,16 @@ def assemble_report(checkpoint4: dict) -> ReputationScreeningReport:
         triggered_rules_list,
         risk_flags,
     )
+    memo_text = _maybe_generate_sensenova_memo(
+        subject,
+        overall_summary,
+        case_result["recommended_disposition"],
+        disposition_rationale,
+        support_summary_dict,
+        triggered_rules_list,
+        risk_flags,
+        memo_text,
+    )
 
     assessment = Assessment(
         overall_risk_level=OverallRiskLevel(case_result["overall_risk_level"]),
@@ -550,6 +788,20 @@ def assemble_report(checkpoint4: dict) -> ReputationScreeningReport:
         processing_notes=processing_notes,
     )
 
+    dashboard_summary = DashboardSummary(
+        risk_category=_risk_category_label(case_result["overall_risk_level"]),
+        support_summary_line=(
+            f"{support_summary_dict.get('high_support_evidence_count', 0)} high / "
+            f"{support_summary_dict.get('medium_support_evidence_count', 0)} med / "
+            f"{support_summary_dict.get('low_support_evidence_count', 0)} low"
+        ),
+        top_triggered_rule=(triggered_rules_list[0] if triggered_rules_list else "No rules triggered"),
+        confidence_label=coverage.value.title(),
+        recommendation_label=case_result["recommended_disposition"].replace("_", " ").title(),
+        entity_match_score=_entity_match_score(evidence),
+        entity_match_level=_entity_match_level(evidence),
+    )
+
     report = ReputationScreeningReport(
         report_metadata=ReportMetadata(
             report_id=f"RSR-{run_id}",
@@ -566,6 +818,7 @@ def assemble_report(checkpoint4: dict) -> ReputationScreeningReport:
         evidence=evidence,
         analyst_checklist=analyst_checklist,
         audit_trail=audit_trail,
+        dashboard_summary=dashboard_summary,
     )
 
     return report
@@ -580,3 +833,31 @@ def run_stage5(checkpoint4: dict) -> dict:
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "report": report.model_dump(mode="json"),
     }
+
+
+def _entity_match_score(evidence: list[EvidenceItem]) -> int:
+    score_map = {"high": 90, "medium": 65, "low": 35}
+    best_score = 0
+    for item in evidence:
+        score = score_map.get(item.rubric_assessment.entity_match.value, 35)
+        if score > best_score:
+            best_score = score
+    return best_score
+
+
+def _entity_match_level(evidence: list[EvidenceItem]) -> str:
+    score = _entity_match_score(evidence)
+    if score >= 90:
+        return "High"
+    if score >= 65:
+        return "Medium"
+    return "Low"
+
+
+def _risk_category_label(level: str) -> str:
+    return {
+        "low": "Low Risk",
+        "medium": "Medium Risk",
+        "high": "High Risk",
+        "critical": "Critical Risk",
+    }.get(level, "Medium Risk")

@@ -13,6 +13,7 @@ flowchart LR
 
   UI -->|POST /screen| API
   UI -->|GET /screen/run_id| API
+  UI -->|POST /screen/run_id/memo/sensenova| API
   API --> ORCH
   ORCH --> RUNS
   API -->|report JSON| UI
@@ -24,7 +25,6 @@ Terminal 1 — backend:
 
 ```bash
 cd backend
-cp .env.example .env   # configure keys
 pip install -r requirements.txt
 playwright install chromium
 python -m uvicorn main:app --reload --port 8000
@@ -34,7 +34,6 @@ Terminal 2 — frontend:
 
 ```bash
 cd frontend
-cp .env.example .env
 pip install -r requirements.txt
 streamlit run app.py --server.port 8501
 ```
@@ -43,7 +42,6 @@ Windows PowerShell:
 
 ```powershell
 cd frontend
-Copy-Item .env.example .env
 pip install -r requirements.txt
 streamlit run app.py --server.port 8501
 ```
@@ -96,6 +94,18 @@ Content-Type: application/json
 }
 ```
 
+### Full memo generation
+
+```http
+POST /screen/{run_id}/memo/sensenova
+```
+
+Behavior:
+
+- Backend attempts SenseNova memo generation first.
+- If SenseNova fails (for example `401 Forbidden`), backend automatically falls back to Kimi.
+- Response includes memo body and source (`sensenova` or `kimi`).
+
 ## Report shape
 
 The backend returns a **v1 reputational screening report** (see [`schemas/reputation-screening-report-rubric.schema.v1.json`](schemas/reputation-screening-report-rubric.schema.v1.json)).
@@ -113,7 +123,7 @@ Any client can either adopt the v1 schema or reuse `report_adapter.py`.
 For demos without API credits:
 
 ```bash
-# frontend/.env
+# backend/.env
 USE_MOCK_DATA=true
 ```
 

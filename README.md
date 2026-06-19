@@ -1,14 +1,14 @@
-# Reputation Screening Agent
+# Risk Assistant
 
-Hackathon project: an automated **public-source reputational screening** pipeline. Submit a person or organization name, the backend searches open web sources, classifies findings with a fixed rubric, and returns a structured **v1 screening report** JSON. A **Streamlit UI** (`frontend/`) calls the API and presents assessment, evidence, rules, and memo views.
+Risk Assistant is an automated **public-source reputational screening** pipeline. Submit a person or organization name, the backend searches open web sources, classifies findings with a fixed rubric, and returns a structured **v1 screening report** JSON. A **Streamlit UI** (`frontend/`) calls the API and presents assessment, evidence, rules, and memo views.
 
 ## What it does
 
 1. **Subject prep** — normalize input and build search queries
 2. **Entity resolution** — infer country/industry from SERP + LLM; pause for analyst clarification when identity is ambiguous
 3. **Collection** — Bright Data SERP + Browser API (Playwright) for adverse hits
-4. **Processing** — text cleanup and source-tier hints (Daytona sandbox or local fallback)
-5. **LLM classification** — rubric scoring per evidence item (TokenRouter / OpenRouter / Kimi)
+4. **Processing** — Daytona Sandbox isolated container runtime for text cleanup and source-tier hints (production-like execution)
+5. **LLM classification** — Kimi-based rubric scoring per evidence item
 6. **Rule engine** — deterministic support bands, risk level, disposition, final report
 
 Reports conform to [`docs/schemas/reputation-screening-report-rubric.schema.v1.json`](docs/schemas/reputation-screening-report-rubric.schema.v1.json). See [`docs/examples/example-profile.json`](docs/examples/example-profile.json) for a sample output shape.
@@ -19,7 +19,6 @@ Reports conform to [`docs/schemas/reputation-screening-report-rubric.schema.v1.j
 
 ```bash
 cd backend
-cp .env.example .env
 pip install -r requirements.txt
 playwright install chromium
 python -m uvicorn main:app --reload --port 8000
@@ -29,7 +28,6 @@ python -m uvicorn main:app --reload --port 8000
 
 ```bash
 cd frontend
-cp .env.example .env
 pip install -r requirements.txt
 streamlit run app.py --server.port 8501
 ```
@@ -38,7 +36,6 @@ On **Windows PowerShell**, use `;` instead of `&&`, and `Copy-Item` instead of `
 
 ```powershell
 cd frontend
-Copy-Item .env.example .env
 pip install -r requirements.txt
 streamlit run app.py --server.port 8501
 ```
@@ -53,7 +50,7 @@ curl -X POST http://localhost:8000/screen \
 
 Poll: `GET http://localhost:8000/screen/{run_id}`
 
-Mock UI only (no API): set `USE_MOCK_DATA=true` in `frontend/.env`.
+Mock UI only (no API): set `USE_MOCK_DATA=true` in `backend/.env`.
 
 ## API summary
 
@@ -63,6 +60,7 @@ Mock UI only (no API): set `USE_MOCK_DATA=true` in `frontend/.env`.
 | `POST /screen` | Start run (`subject_type` + `primary_name` required) |
 | `GET /screen/{run_id}` | Status, clarification form, or final report |
 | `POST /screen/{run_id}/clarify` | Resume after `clarification_required` |
+| `POST /screen/{run_id}/memo/sensenova` | Generate full memo via SenseNova, with automatic fallback to Kimi |
 
 Status flow: `queued` → `running` → `clarification_required` → `running` → `complete` | `error`
 
@@ -80,23 +78,33 @@ hackathon-dd-agent/
 │   └── examples/
 │       └── example-profile.json
 ├── backend/                         # FastAPI screening pipeline
+│   ├── config/                      # rule config + source tiers
 │   ├── main.py
 │   ├── orchestrator.py
+│   ├── processing/                  # sandbox processing utilities
+│   ├── schemas/                     # Pydantic report/rubric models
+│   ├── scripts/                     # deploy + demo seed scripts
 │   ├── stages/
 │   └── runs/                        # checkpoints (gitignored)
 └── frontend/                        # Streamlit Risk Assistant UI
     ├── app.py
     ├── api_client.py                # calls backend /screen
+    ├── env_shared.py                # loads shared backend/.env
     ├── report_adapter.py            # v1 report → UI model
+    ├── settings.py
     ├── mock_data/mock_data.json
-    ├── legacy/                      # early prototype scripts
-    └── services/                    # legacy mock services
+    └── services/                    # helper service stubs
 ```
 
 ## Configuration
 
-- **Backend** — `backend/.env` (Bright Data, TokenRouter at `api.tokenrouter.com`, etc.)
-- **Frontend** — `frontend/.env` (`BACKEND_URL`, `USE_MOCK_DATA`)
+- **Shared runtime config** — `backend/.env` (Bright Data, LLM, and frontend `BACKEND_URL` / `USE_MOCK_DATA` / polling settings)
+
+### Runtime model
+
+- **Daytona Sandbox** is used as an isolated containerized execution environment for processing stages.
+- This mirrors production-style job isolation (ephemeral runtime, dependency boundary, and controlled execution context).
+- Local fallback is available for development when sandbox execution is not enabled.
 
 See [backend/README.md](backend/README.md) and [frontend/README.md](frontend/README.md).
 
@@ -112,5 +120,5 @@ Validate a report:
 
 ```bash
 cd backend
-python validate_report.py runs/DEMO-ORION-001/final_report.json
+python validate_report.py runs/<run_id>/final_report.json
 ```
