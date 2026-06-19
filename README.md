@@ -15,6 +15,13 @@ Reports conform to [`docs/schemas/reputation-screening-report-rubric.schema.v1.j
 
 ## Quick start (full stack)
 
+Copy shared config once at the repo root:
+
+```bash
+cp .env.example .env
+# Edit .env with your API keys
+```
+
 **Backend** (port 8000):
 
 ```bash
@@ -50,7 +57,7 @@ curl -X POST http://localhost:8000/screen \
 
 Poll: `GET http://localhost:8000/screen/{run_id}`
 
-Mock UI only (no API): set `USE_MOCK_DATA=true` in `backend/.env`.
+Mock UI only (no API): set `USE_MOCK_DATA=true` in `.env`.
 
 ## API summary
 
@@ -68,6 +75,7 @@ Status flow: `queued` → `running` → `clarification_required` → `running` �
 
 ```
 hackathon-dd-agent/
+├── .env.example                     # shared config template (copy to .env)
 ├── README.md
 ├── docs/
 │   ├── README.md                    # documentation index
@@ -98,7 +106,7 @@ hackathon-dd-agent/
 
 ## Configuration
 
-- **Shared runtime config** — `backend/.env` (Bright Data, LLM, and frontend `BACKEND_URL` / `USE_MOCK_DATA` / polling settings)
+- **Shared runtime config** — repo root `.env` (Bright Data, LLM, Daytona, SenseNova, and frontend `BACKEND_URL` / `USE_MOCK_DATA` / polling settings). See `.env.example`.
 
 ### Runtime model
 

@@ -5,9 +5,9 @@ FastAPI backend for the Agent Forge hackathon reputational screening agent.
 ## Quick start
 
 ```bash
-cd backend
-# Edit .env with your API keys
+cp .env.example .env   # from repo root; edit with your API keys
 
+cd backend
 pip install -r requirements.txt
 uvicorn main:app --reload --port 8000
 ```
@@ -98,7 +98,7 @@ Each stage checkpoints to `runs/{run_id}/`. Entity resolution artifacts: `checkp
 
 ## Environment variables
 
-See `backend/.env`. Bright Data free tier setup:
+See `.env.example` at the repo root (copy to `.env`). Bright Data free tier setup:
 
 - `BRIGHT_DATA_API_KEY` — account API key for SERP API (`/request` endpoint)
 - `BRIGHT_DATA_SERP_ZONE` — SERP API zone name

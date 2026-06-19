@@ -455,7 +455,9 @@ The rubric classifications, merged back with the processed item metadata. At thi
 
 ## Stage 5 — Rule Engine (Deterministic Assessment)
 
-**Responsibility:** Compute `support_band` per evidence item and `overall_risk_level`, `recommended_disposition`, and `triggered_rules` for the case. No LLM call in this stage.
+**Responsibility:** Compute `support_band` per evidence item and `overall_risk_level`, `recommended_disposition`, and `triggered_rules` for the case. Risk bands and disposition remain fully deterministic — no LLM involvement in scoring.
+
+After assembly, Stage 5 also builds a `dashboard_summary` block (risk category, support counts, entity match score) for the frontend dashboard. When SenseNova is configured, the deterministic memo draft may be polished via LLM; on-demand memo generation is also exposed at `POST /screen/{run_id}/memo/sensenova` (SenseNova first, Kimi fallback).
 
 **Design principle:** The rule engine must be readable as plain English, version-controlled, and independently testable. A judge should be able to read the ruleset and verify that the output is consistent with the inputs without looking at model internals.[21][10][14]
 
@@ -611,6 +613,7 @@ def compute_case_risk(
 | `POST /screen` | Start run (minimal: `subject_type` + `primary_name`) |
 | `GET /screen/{run_id}` | Poll status; returns report when complete or clarification form when paused |
 | `POST /screen/{run_id}/clarify` | Submit clarification to resume a paused run (409 if not awaiting clarification) |
+| `POST /screen/{run_id}/memo/sensenova` | Generate full memo via SenseNova; falls back to Kimi on failure (409 unless run is `complete`) |
 
 ```python
 from fastapi import FastAPI, BackgroundTasks
@@ -780,20 +783,13 @@ There are three layers to manage: your **local dev machine**, the **Daytona work
 
 ### Layer 1 — Local dev (`.env` file + `pydantic-settings`)
 
-Keep a `.env` file that never gets committed (add it to `.gitignore`). Settings are loaded and validated at startup via `backend/config.py` using `pydantic-settings`. [fastapi.tiangolo](https://fastapi.tiangolo.com/advanced/settings/)
+Keep a `.env` file that never gets committed (add it to `.gitignore`). Copy from `.env.example` at the repo root. Settings load from **repository root `.env` first**, then `backend/.env` as a fallback — both backend and frontend use this shared file via `backend/config.py` and `frontend/env_shared.py`. [fastapi.tiangolo](https://fastapi.tiangolo.com/advanced/settings/)
 
 ```bash
-# .env  (never commit this)
-BRIGHT_DATA_API_KEY=...
-BRIGHT_DATA_SERP_ZONE=serp_api
-BRIGHT_DATA_BROWSER_USERNAME=...
-BRIGHT_DATA_BROWSER_PASSWORD=...
-DAYTONA_API_KEY=...
-LLM_PROVIDER=tokenrouter
-TOKENROUTER_API_KEY=...
+cp .env.example .env   # never commit .env
 ```
 
-Full variable list:
+Key groups:
 
 ```bash
 # Bright Data (SERP + Browser API)
@@ -802,24 +798,29 @@ BRIGHT_DATA_SERP_ZONE=serp_api
 BRIGHT_DATA_BROWSER_USERNAME=...
 BRIGHT_DATA_BROWSER_PASSWORD=...
 
-# LLM (default: TokenRouter OpenAI-compatible)
+# Daytona (Stage 3 processing + optional deploy)
+DAYTONA_API_KEY=...
+DAYTONA_SERVER_URL=...          # required for current daytona-sdk
+DAYTONA_TARGET=local
+
+# LLM Stage 4 (default: TokenRouter)
 LLM_PROVIDER=tokenrouter
 TOKENROUTER_API_KEY=...
-TOKENROUTER_BASE_URL=https://api.tokenrouter.com/v1
-TOKENROUTER_MODEL=MiniMax-M3
+KIMI_API_KEY=...                # also used for memo fallback
 
-# Entity resolution
-CLARIFICATION_ENABLED=true
-DISCOVERY_SERP_RESULTS=5
+# Stage 5 memo polish (optional)
+SENSENOVA_API_KEY=...
+SENSENOVA_BASE_URL=https://api.sensenova.cn/compatible-mode/v1
+SENSENOVA_MODEL=SenseNova-5
 
-# Optional
-DAYTONA_API_KEY=...
-LOG_LEVEL=INFO
-LOG_FILE=logs/pipeline.log
-RUNS_DIR=./runs
+# Frontend (shared in same .env)
+BACKEND_URL=http://127.0.0.1:8000
+USE_MOCK_DATA=false
+POLL_INTERVAL_SECONDS=5
+POLL_TIMEOUT_SECONDS=900
 ```
 
-See `backend/.env` for the full list, including OpenRouter, Kimi, and shared frontend overrides.
+See `.env.example` for the full list including OpenRouter overrides and Bright Data username auto-build options.
 
 ### Layer 2 — Daytona workspace (dev environment secrets)
 

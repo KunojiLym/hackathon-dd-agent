@@ -120,14 +120,15 @@ Any client can either adopt the v1 schema or reuse `report_adapter.py`.
 
 ## Mock mode
 
-For demos without API credits:
+For demos without API credits, set in repo root `.env`:
 
 ```bash
-# backend/.env
 USE_MOCK_DATA=true
 ```
 
-Loads `frontend/mock_data/mock_data.json` (v1-shaped sample).
+This loads `frontend/mock_data/mock_data.json` (v1-shaped sample).
+
+If `USE_MOCK_DATA` is unset, the UI calls `GET /health` first and falls back to mock data automatically when the backend is unreachable (including Streamlit Cloud with a localhost `BACKEND_URL`).
 
 Backend demo runs (no live APIs):
 
